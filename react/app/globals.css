@@ -2,9 +2,9 @@
 
 :root {
   --paint: #f5e000;
-  --rim: #c4a574;
+  --rim: #f5e000;
   --glass: rgba(255, 255, 255, 0.08);
-  --glass-border: rgba(255, 255, 255, 0.18);
+  --glass-border: rgba(245, 224, 0, 0.22);
   --dash-deep: #070809;
   --background: var(--dash-deep);
   --foreground: #f5f5f0;
@@ -95,11 +95,13 @@ body {
 .cockpit-wheel {
   position: absolute;
   left: 0.4rem;
-  bottom: 0.45rem;
+  bottom: 0.95rem;
   z-index: 6;
   display: flex;
-  align-items: flex-end;
-  justify-content: flex-start;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: flex-end;
+  gap: 0.6rem;
   pointer-events: none;
 }
 
@@ -107,17 +109,31 @@ body {
   pointer-events: auto;
 }
 
-/* Gauges float over the fullscreen feed — flush to screen bottom */
+.wheel-row {
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-start;
+}
+
+.wheel-steer-chip {
+  margin-top: 0;
+  margin-left: 0.15rem;
+  align-self: flex-start;
+  pointer-events: none;
+}
+
+/* Gauges sit just right of the wheel, with a small gap */
 .cockpit-analog {
   position: absolute;
-  left: 50%;
+  left: calc(0.4rem + min(37.12dvh, 213px) + 4.1rem);
   bottom: 0;
-  transform: translateX(-50%);
+  transform: none;
   z-index: 5;
   pointer-events: none;
   margin: 0;
   padding: 0;
   line-height: 0;
+  max-width: calc(100% - (0.4rem + min(37.12dvh, 213px) + 4.1rem) - 6.5rem);
 }
 
 .cockpit-analog > * {
@@ -126,13 +142,14 @@ body {
 
 .cockpit-pedals {
   position: absolute;
-  right: 0.4rem;
-  bottom: 0.45rem;
+  right: 0.85rem;
+  bottom: 0.85rem;
   z-index: 6;
   display: flex;
   align-items: flex-end;
   justify-content: flex-end;
   pointer-events: none;
+  padding: 0.35rem;
 }
 
 .cockpit-pedals > * {
@@ -147,11 +164,16 @@ body {
   }
   .cockpit-wheel {
     left: 0.25rem;
-    bottom: 0.35rem;
+    bottom: 0.75rem;
+  }
+  .cockpit-analog {
+    left: calc(0.25rem + min(37.12dvh, 213px) + 3.6rem);
+    max-width: calc(100% - (0.25rem + min(37.12dvh, 213px) + 3.6rem) - 5.5rem);
   }
   .cockpit-pedals {
-    right: 0.25rem;
-    bottom: 0.35rem;
+    right: 0.65rem;
+    bottom: 0.65rem;
+    padding: 0.3rem;
   }
 }
 
@@ -309,12 +331,11 @@ body {
   backdrop-filter: blur(10px);
 }
 
-/* Steer angle — sits below GT2 RS title */
+/* Steer angle — sits just above the wheel */
 .steer-chip {
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
-  margin-top: 1.55rem;
   transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
 }
 
@@ -360,9 +381,9 @@ body {
   position: relative;
   display: flex;
   align-items: flex-end;
-  justify-content: center;
+  justify-content: flex-start;
   width: 100%;
-  max-width: 26rem;
+  max-width: 34rem;
   padding: 0.85rem 0 0;
   margin: 0;
   border: none;
@@ -373,11 +394,11 @@ body {
 
 .pc-shell {
   position: absolute;
-  left: 0;
-  right: 0;
+  left: -12%;
+  right: -12%;
   top: 0;
   bottom: -1px;
-  width: 100%;
+  width: auto;
   height: calc(100% + 1px);
   display: block;
   pointer-events: none;
@@ -390,10 +411,14 @@ body {
 }
 
 .pc-shell-stroke {
-  stroke: rgba(255, 255, 255, 0.14);
-  stroke-width: 1.2;
-  stroke-linejoin: round;
-  stroke-linecap: round;
+  stroke: none;
+  stroke-width: 0;
+}
+
+.pc-shell-stroke-gloss {
+  stroke: none;
+  stroke-width: 0;
+  opacity: 0;
 }
 
 .pc-dials {
@@ -587,7 +612,7 @@ body {
     width: 5.8rem;
   }
   .porsche-cluster {
-    max-width: 22rem;
+    max-width: 30rem;
   }
 }
 
@@ -639,22 +664,232 @@ body {
     inset 0 1px 0 rgba(255, 255, 255, 0.45);
 }
 
-.wheel-3d {
-  filter: drop-shadow(0 10px 18px rgba(0, 0, 0, 0.35));
+/* Classy auto-shifter gate (R / D) — whole gate toggles gear */
+.gear-gate {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.55rem;
+  width: 1.425rem;
+  padding: 0.5rem 0.18rem;
+  margin: 0;
+  border-radius: 1.15rem;
+  border: 1px solid rgba(245, 224, 0, 0.28);
+  background:
+    linear-gradient(165deg, rgba(255, 255, 255, 0.2) 0%, rgba(255, 255, 255, 0.04) 38%, transparent 62%),
+    linear-gradient(180deg, rgba(28, 28, 32, 0.92), rgba(8, 8, 10, 0.95));
+  backdrop-filter: blur(18px) saturate(1.4);
+  -webkit-backdrop-filter: blur(18px) saturate(1.4);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.32),
+    inset 0 -1px 10px rgba(0, 0, 0, 0.45),
+    0 8px 20px rgba(0, 0, 0, 0.35);
+  cursor: pointer;
+  color: inherit;
+  font: inherit;
+  -webkit-tap-highlight-color: transparent;
 }
 
-.wheel.wheel-gloss svg {
-  filter: drop-shadow(0 2px 8px rgba(255, 255, 255, 0.12));
+.gear-gate:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.gear-gate:not(:disabled):active {
+  transform: scale(0.97);
+}
+
+.gear-gate-rail {
+  position: absolute;
+  top: 1.35rem;
+  bottom: 1.35rem;
+  left: 50%;
+  width: 0.18rem;
+  transform: translateX(-50%);
+  border-radius: 999px;
+  background: linear-gradient(
+    180deg,
+    rgba(245, 224, 0, 0.15),
+    rgba(255, 255, 255, 0.12) 50%,
+    rgba(245, 224, 0, 0.15)
+  );
+  box-shadow: inset 0 0 3px rgba(0, 0, 0, 0.6);
+  pointer-events: none;
+}
+
+.gear-indicator {
+  position: absolute;
+  left: 50%;
+  width: 0.4rem;
+  height: 0.4rem;
+  border-radius: 999px;
+  transform: translateX(-50%);
+  background: radial-gradient(circle at 35% 30%, #fff8a0, var(--paint) 55%, #8a7a00);
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  box-shadow:
+    0 0 10px rgba(245, 224, 0, 0.55),
+    0 2px 4px rgba(0, 0, 0, 0.45);
+  transition: top 220ms cubic-bezier(0.22, 1, 0.36, 1);
+  pointer-events: none;
+  z-index: 1;
+}
+
+.gear-indicator.at-r {
+  top: 1.55rem;
+}
+
+.gear-indicator.at-d {
+  top: calc(100% - 2.1rem);
+}
+
+.gear-pos {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.05rem;
+  width: 100%;
+  padding: 0.2rem 0;
+  border: none;
+  background: transparent;
+  pointer-events: none;
+  color: rgba(255, 255, 255, 0.28);
+  transition: color 180ms ease, text-shadow 180ms ease;
+}
+
+.gear-pos-letter {
+  font-family: var(--font-display), sans-serif;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  line-height: 1;
+}
+
+.gear-pos-name {
+  font-size: 0.32rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  opacity: 0.7;
+}
+
+.gear-pos.is-active.is-d {
+  color: var(--paint);
+  text-shadow: 0 0 12px rgba(245, 224, 0, 0.55);
+}
+
+.gear-pos.is-active.is-r {
+  color: #ffb4a8;
+  text-shadow: 0 0 12px rgba(255, 100, 80, 0.45);
+}
+
+.gear-pos.is-active.is-r .gear-pos-letter {
+  color: #ff8a7a;
+}
+
+.wheel-3d {
+  filter: drop-shadow(0 10px 18px rgba(0, 0, 0, 0.45));
+}
+
+.wheel.wheel-gloss {
+  filter:
+    drop-shadow(0 0 10px rgba(245, 224, 0, 0.28))
+    drop-shadow(0 12px 22px rgba(0, 0, 0, 0.55));
+}
+
+/* steer.svg as yellow outline + black face */
+.steer-svg-mask {
+  position: absolute;
+  inset: 0;
+  display: block;
+  pointer-events: none;
+  -webkit-mask-image: url("/steer.svg");
+  mask-image: url("/steer.svg");
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  mask-position: center;
+  -webkit-mask-size: contain;
+  mask-size: contain;
+}
+
+.steer-svg-paint {
+  display: block;
+  inset: -1.5%;
+  background: var(--paint);
+}
+
+.steer-svg-ink {
+  background:
+    radial-gradient(circle at 38% 30%, #3a3a3a 0%, #121212 42%, #000 78%);
+}
+
+.steer-hub-label {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  z-index: 2;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  font-family: var(--font-display), system-ui, sans-serif;
+  font-size: clamp(0.55rem, 1.8dvh, 0.72rem);
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  color: var(--paint);
+  text-shadow:
+    0 0 8px rgba(245, 224, 0, 0.45),
+    0 1px 2px rgba(0, 0, 0, 0.9);
+}
+
+.brand-rc-logo {
+  object-fit: contain;
+  max-width: 4.5rem;
+  flex-shrink: 0;
+}
+
+.brand-glass {
+  border-radius: 0.85rem;
+  border: 1px solid rgba(245, 224, 0, 0.28);
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.03));
+  backdrop-filter: blur(20px) saturate(1.35);
+  -webkit-backdrop-filter: blur(20px) saturate(1.35);
+  box-shadow:
+    0 8px 22px rgba(0, 0, 0, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.28);
+}
+
+.brand-title {
+  position: relative;
+  padding-bottom: 0.2rem;
+  line-height: 1.1;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.8);
+}
+
+.brand-title::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--paint), rgba(245, 224, 0, 0.25));
+  box-shadow: 0 0 8px rgba(245, 224, 0, 0.45);
 }
 
 .pedal-lg {
-  min-width: 6.6rem !important;
-  min-height: 8.7rem !important;
-  padding: 0.85rem 1.1rem 0.55rem !important;
+  min-width: 4.75rem !important;
+  min-height: 6.26rem !important;
+  padding: 0.55rem 0.7rem 0.4rem !important;
 }
 
 .pedal-stack {
   width: auto;
+  padding: 0.25rem 0.15rem 0.15rem;
 }
 
 .glass-gauge svg {
@@ -671,8 +906,8 @@ body {
     width: 3.6rem;
   }
   .pedal-lg {
-    min-height: 7.2rem !important;
-    min-width: 5.6rem !important;
+    min-height: 5.18rem !important;
+    min-width: 4.03rem !important;
   }
 }
 
@@ -799,6 +1034,65 @@ body {
   transform: scale(0.97);
 }
 
+/* Link + LIVE + debug share one column width */
+.link-stack {
+  display: flex;
+  width: 12.75rem;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.4rem;
+}
+
+/* Glossy toggle switch (Link modal) */
+.toggle-track {
+  position: relative;
+  display: block;
+  width: 2.55rem;
+  height: 1.45rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: linear-gradient(160deg, rgba(255, 255, 255, 0.12), rgba(0, 0, 0, 0.35));
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.45);
+  transition: background 180ms ease, border-color 180ms ease;
+}
+
+.toggle-track.is-on {
+  border-color: rgba(245, 224, 0, 0.45);
+  background: linear-gradient(160deg, rgba(245, 224, 0, 0.55), rgba(180, 150, 0, 0.35));
+  box-shadow:
+    0 0 12px rgba(245, 224, 0, 0.25),
+    inset 0 1px 0 rgba(255, 255, 255, 0.35);
+}
+
+.toggle-knob {
+  position: absolute;
+  top: 0.12rem;
+  left: 0.12rem;
+  width: 1.12rem;
+  height: 1.12rem;
+  border-radius: 999px;
+  background: linear-gradient(160deg, #fff, #d8d8d8);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
+  transition: transform 180ms ease;
+}
+
+.toggle-track.is-on .toggle-knob {
+  transform: translateX(1.1rem);
+}
+
+/* Debug panel under Link (top-right) */
+.debug-glass {
+  border-radius: 0.85rem;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.04));
+  backdrop-filter: blur(20px) saturate(1.35);
+  -webkit-backdrop-filter: blur(20px) saturate(1.35);
+  box-shadow:
+    0 8px 24px rgba(0, 0, 0, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.28);
+}
+
 .link-dock {
   transition: transform 120ms ease, box-shadow 120ms ease;
 }
@@ -830,44 +1124,31 @@ body {
   backdrop-filter: blur(6px);
 }
 
-.gear-gate {
-  border-radius: 0.75rem;
-  border: 1px solid rgba(255, 255, 255, 0.28);
-  background:
-    linear-gradient(165deg, rgba(255, 255, 255, 0.28) 0%, rgba(255, 255, 255, 0.06) 40%, transparent 60%),
-    linear-gradient(180deg, rgba(30, 32, 40, 0.8), rgba(10, 11, 14, 0.8));
-  backdrop-filter: blur(16px) saturate(1.4);
-  -webkit-backdrop-filter: blur(16px) saturate(1.4);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.35),
-    inset 0 -1px 8px rgba(0, 0, 0, 0.25),
-    0 6px 16px rgba(0, 0, 0, 0.25);
-}
-
 .glass-pedal {
-  border: 1px solid rgba(255, 255, 255, 0.3);
-  backdrop-filter: blur(18px) saturate(1.45);
-  -webkit-backdrop-filter: blur(18px) saturate(1.45);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  backdrop-filter: blur(14px) saturate(1.25);
+  -webkit-backdrop-filter: blur(14px) saturate(1.25);
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.4),
-    inset 0 -8px 16px rgba(0, 0, 0, 0.2),
-    0 8px 20px rgba(0, 0, 0, 0.28);
+    inset 0 1px 0 rgba(255, 255, 255, 0.28),
+    inset 0 -8px 16px rgba(0, 0, 0, 0.12),
+    0 8px 20px rgba(0, 0, 0, 0.18);
+  opacity: 0.82;
 }
 
 .pedal-brake {
-  color: #fda4af;
+  color: rgba(253, 164, 175, 0.9);
   background:
-    linear-gradient(165deg, rgba(255, 255, 255, 0.28) 0%, rgba(255, 255, 255, 0.05) 35%, transparent 55%),
-    linear-gradient(180deg, rgba(90, 30, 36, 0.5), rgba(30, 12, 14, 0.5));
+    linear-gradient(165deg, rgba(255, 255, 255, 0.18) 0%, rgba(255, 255, 255, 0.03) 35%, transparent 55%),
+    linear-gradient(180deg, rgba(90, 30, 36, 0.32), rgba(30, 12, 14, 0.28));
   clip-path: polygon(12% 0, 88% 0, 100% 100%, 0 100%);
   border-radius: 0.4rem;
 }
 
 .pedal-accel {
-  color: #f5e000;
+  color: rgba(245, 224, 0, 0.92);
   background:
-    linear-gradient(165deg, rgba(255, 255, 255, 0.28) 0%, rgba(255, 255, 255, 0.05) 35%, transparent 55%),
-    linear-gradient(180deg, rgba(50, 48, 20, 0.5), rgba(18, 16, 8, 0.5));
+    linear-gradient(165deg, rgba(255, 255, 255, 0.18) 0%, rgba(255, 255, 255, 0.03) 35%, transparent 55%),
+    linear-gradient(180deg, rgba(50, 48, 20, 0.32), rgba(18, 16, 8, 0.28));
   clip-path: polygon(8% 0, 92% 0, 100% 100%, 0 100%);
   border-radius: 0.55rem 0.55rem 1.1rem 1.1rem;
 }
@@ -938,7 +1219,7 @@ body {
     padding: 0.35rem 0.55rem 0.3rem;
   }
   .pedal-lg {
-    min-height: 7.2rem !important;
-    min-width: 5.6rem !important;
+    min-height: 5.18rem !important;
+    min-width: 4.03rem !important;
   }
 }

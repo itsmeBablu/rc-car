@@ -13,6 +13,8 @@ public:
   void connectAndSave(const String &ssid, const String &pass);
   void trySaved();
   void forgetSaved();
+  /** Drop STA without wiping saved SSID/pass. */
+  void disconnectSta();
   void startScan();
 
   bool isConnected() const;

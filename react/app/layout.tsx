@@ -22,6 +22,18 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "GT2 RS · RC Cockpit",
   description: "1:24 Porsche GT2 RS WiFi RC car cockpit",
+  applicationName: "GT2 RS",
+  manifest: "/manifest.webmanifest",
+  icons: {
+    icon: [{ url: "/rc.svg", type: "image/svg+xml" }],
+    shortcut: ["/rc.svg"],
+    apple: [{ url: "/rc.svg" }],
+  },
+  appleWebApp: {
+    capable: true,
+    title: "GT2 RS",
+    statusBarStyle: "black-translucent",
+  },
 };
 
 export const viewport: Viewport = {
@@ -29,7 +41,11 @@ export const viewport: Viewport = {
   initialScale: 1,
   maximumScale: 1,
   userScalable: false,
-  themeColor: "#070809",
+  themeColor: [
+    { media: "(prefers-color-scheme: dark)", color: "#070809" },
+    { media: "(prefers-color-scheme: light)", color: "#f5e000" },
+    { color: "#f5e000" },
+  ],
   viewportFit: "cover",
 };
 

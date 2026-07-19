@@ -121,6 +121,16 @@ void WifiControl::forgetSaved() {
   emitStatus();
 }
 
+void WifiControl::disconnectSta() {
+  _connecting = false;
+  _scanning = false;
+  _scanThenConnect = false;
+  _lastFailError = "";
+  WiFi.disconnect(false, false);
+  Serial.println("[wifi] disconnected (creds kept)");
+  emitStatus();
+}
+
 void WifiControl::connectAndSave(const String &ssid, const String &pass) {
   startConnect(ssid, pass, true);
 }

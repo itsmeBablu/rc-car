@@ -1,0 +1,24 @@
+{
+  "name": "GT2 RS · RC Cockpit",
+  "short_name": "GT2 RS",
+  "description": "1:24 RC car cockpit — Bluetooth + WiFi",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "landscape",
+  "background_color": "#070809",
+  "theme_color": "#f5e000",
+  "icons": [
+    {
+      "src": "/rc.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/rc.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ]
+}

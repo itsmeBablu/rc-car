@@ -23,7 +23,7 @@ export function LinkDock({ state, transport, wifiLabel, live = false, onOpenLink
     <button
       type="button"
       onClick={onOpenLink}
-      className="live-link glass-pill group flex items-center gap-2 px-2.5 py-1.5 text-left"
+      className="live-link glass-pill group flex w-full items-center gap-2 px-2.5 py-1.5 text-left"
       aria-label="Open link settings"
     >
       <span className={`live-beacon compact ${live ? "is-live" : ""}`} aria-hidden={!live}>

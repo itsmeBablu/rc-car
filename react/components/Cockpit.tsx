@@ -11,6 +11,11 @@ import { useCarSocket } from "@/hooks/useCarSocket";
 import {
   MOTOR_MAX,
   SERVO_CENTER,
+  clearStoredWifiCreds,
+  loadPreferBle,
+  loadStoredWifiCreds,
+  savePreferBle,
+  saveStoredWifiCreds,
   saveStoredWsUrl,
   wheelDegToServo,
 } from "@/lib/protocol";
@@ -19,6 +24,7 @@ export function Cockpit() {
   const ble = useBleProvision();
   const [wsUrl, setWsUrl] = useState("");
   const [debug, setDebug] = useState(false);
+  const [preferBle, setPreferBle] = useState(true);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [wheelDeg, setWheelDeg] = useState(0);
   const [servoAngle, setServoAngle] = useState(SERVO_CENTER);
@@ -28,6 +34,15 @@ export function Cockpit() {
   const [gear, setGear] = useState<"D" | "R">("D");
   const [batteryPct, setBatteryPct] = useState(92);
   const animRef = useRef<number | null>(null);
+  const [storedWifi, setStoredWifi] = useState<{
+    ssid: string;
+    password: string;
+  } | null>(null);
+
+  useEffect(() => {
+    setPreferBle(loadPreferBle());
+    setStoredWifi(loadStoredWifiCreds());
+  }, []);
 
   const wifiReady = ble.wifiStatus?.wifi === "connected";
   const bleReady = ble.bleState === "connected";
@@ -62,10 +77,44 @@ export function Cockpit() {
     enabled: Boolean(wsUrl) && wifiReady,
   });
 
-  const transport: "wifi" | "ble" | "none" =
-    wifiReady && wsState === "open" ? "wifi" : bleReady ? "ble" : "none";
+  const wsReady = wifiReady && wsState === "open";
+
+  // preferBle ON  → BLE control (no WiFi needed; WiFi optional for camera)
+  // preferBle OFF → WiFi WebSocket when linked, else BLE
+  const transport: "wifi" | "ble" | "none" = preferBle
+    ? bleReady
+      ? "ble"
+      : wsReady
+        ? "wifi"
+        : "none"
+    : wsReady
+      ? "wifi"
+      : bleReady
+        ? "ble"
+        : "none";
 
   const canDrive = transport !== "none";
+
+  const onPreferBleChange = (value: boolean) => {
+    setPreferBle(value);
+    savePreferBle(value);
+  };
+
+  const provisionWifi = async (ssid: string, password: string) => {
+    await ble.provisionWifi(ssid, password);
+    saveStoredWifiCreds(ssid, password);
+    setStoredWifi({ ssid, password });
+  };
+
+  const disconnectWifi = async () => {
+    await ble.disconnectWifi();
+  };
+
+  const forgetWifi = async () => {
+    await ble.forgetWifi();
+    clearStoredWifiCreds();
+    setStoredWifi(null);
+  };
 
   const sendSteer = (angle: number) => {
     if (transport === "wifi") sendSteerWs(angle);
@@ -162,7 +211,6 @@ export function Cockpit() {
   useEffect(() => {
     const moving = Math.abs(left) > 20 || Math.abs(right) > 20;
     if (!moving) return;
-    // Drain at a fixed rate while motors are active (no sticky counter)
     const id = setInterval(() => {
       setBatteryPct((b) => Math.max(5, b - 0.15));
     }, 2000);
@@ -172,9 +220,10 @@ export function Cockpit() {
   const speedKmh = Math.round(
     (Math.max(Math.abs(left), Math.abs(right)) / MOTOR_MAX) * 330,
   );
-  const rpm = Math.round(
-    (Math.max(Math.abs(left), Math.abs(right)) / MOTOR_MAX) * 7.5 * 10,
-  ) / 10;
+  const rpm =
+    Math.round(
+      (Math.max(Math.abs(left), Math.abs(right)) / MOTOR_MAX) * 7.5 * 10,
+    ) / 10;
 
   const linkState =
     transport === "wifi"
@@ -187,10 +236,19 @@ export function Cockpit() {
 
   return (
     <div className="cockpit cockpit-graph relative flex h-dvh max-h-dvh flex-col overflow-hidden text-white">
-      <header className="pointer-events-none absolute inset-x-0 top-0 z-20 flex items-center px-3 pt-1.5 sm:px-4">
-        <p className="font-[family-name:var(--font-display)] text-sm tracking-[0.14em] text-[var(--paint)] drop-shadow-[0_1px_4px_rgba(0,0,0,0.8)]">
-          GT2 RS
-        </p>
+      <header className="pointer-events-none absolute inset-x-0 top-0 z-20 flex items-start justify-start px-3 pt-2 sm:px-4">
+        <div className="brand-glass pointer-events-none flex items-center gap-2.5 px-2.5 py-1.5">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/rc.svg"
+            alt=""
+            className="brand-rc-logo h-10 w-auto sm:h-11"
+            draggable={false}
+          />
+          <p className="brand-title font-[family-name:var(--font-display)] text-sm tracking-[0.14em] text-[var(--paint)]">
+            GT2 RS
+          </p>
+        </div>
       </header>
 
       <LinkSettingsModal
@@ -204,54 +262,68 @@ export function Cockpit() {
         wifiStatus={ble.wifiStatus}
         networks={ble.networks}
         transport={transport}
+        preferBle={preferBle}
+        onPreferBleChange={onPreferBleChange}
         debug={debug}
         onDebugChange={setDebug}
-        lastAck={lastAck}
         onConnectBle={() => void ble.connect()}
         onScanWifi={ble.scanWifi}
-        onProvisionWifi={ble.provisionWifi}
-        onForgetWifi={ble.forgetWifi}
+        onProvisionWifi={provisionWifi}
+        onDisconnectWifi={disconnectWifi}
+        onForgetWifi={forgetWifi}
+        initialSsid={storedWifi?.ssid ?? ""}
+        initialPassword={storedWifi?.password ?? ""}
       />
 
       <main className="cockpit-layout relative z-10 grid min-h-0 flex-1 gap-0 p-0">
-        {/* Fullscreen live feed — controls & gauges overlay */}
         <section className="cockpit-windscreen flex min-h-0 items-stretch justify-center">
           <CameraView
             streamUrl={streamUrl}
             wifiReady={wifiReady}
-            servoAngle={servoAngle}
-            gear={gear}
             debug={debug}
             left={left}
             right={right}
+            wheelDeg={wheelDeg}
             linkState={linkState}
             transport={transport}
             wifiLabel={wifiReady ? ble.wifiStatus?.ws : undefined}
+            lastAck={lastAck}
             onOpenLink={() => setSettingsOpen(true)}
           />
 
           <div className="cockpit-wheel">
-            <div className="wheel-lights">
-              <button
-                type="button"
-                className={`lights-switch ${lightsOn ? "is-on" : ""}`}
-                onClick={toggleLights}
-                aria-pressed={lightsOn}
-                aria-label="Lights"
-              >
-                <span className="lights-switch-track">
-                  <span className="lights-switch-mark top">ON</span>
-                  <span className={`lights-switch-knob ${lightsOn ? "up" : "down"}`} />
-                  <span className="lights-switch-mark bot">OFF</span>
-                </span>
-              </button>
+            <span
+              className={`steer-chip glass-chip wheel-steer-chip font-mono text-[10px] text-white/70 ${gear === "R" ? "is-reverse" : ""}`}
+            >
+              <span>{servoAngle}°</span>
+              {gear === "R" ? (
+                <span className="steer-chip-rev">REVERSE</span>
+              ) : null}
+            </span>
+            <div className="wheel-row">
+              <div className="wheel-lights">
+                <button
+                  type="button"
+                  className={`lights-switch ${lightsOn ? "is-on" : ""}`}
+                  onClick={toggleLights}
+                  aria-pressed={lightsOn}
+                  aria-label="Lights"
+                >
+                  <span className="lights-switch-track">
+                    <span className="lights-switch-mark top">ON</span>
+                    <span
+                      className={`lights-switch-knob ${lightsOn ? "up" : "down"}`}
+                    />
+                    <span className="lights-switch-mark bot">OFF</span>
+                  </span>
+                </button>
+              </div>
+              <SteeringWheel
+                wheelDeg={wheelDeg}
+                onWheelDeg={applyWheel}
+                onRelease={autoCenter}
+              />
             </div>
-            <SteeringWheel
-              wheelDeg={wheelDeg}
-              onWheelDeg={applyWheel}
-              onRelease={autoCenter}
-              debug={debug}
-            />
           </div>
 
           <div className="cockpit-analog">

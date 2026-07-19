@@ -128,6 +128,7 @@ export async function openBleSession(device: BluetoothDevice): Promise<{
   sendControl: (payload: string) => Promise<void>;
   requestStatus: () => Promise<void>;
   requestScan: () => Promise<void>;
+  disconnectWifi: () => Promise<void>;
   forgetWifi: () => Promise<void>;
   startNotify: (onStatus: (s: WifiStatus) => void) => Promise<() => void>;
 }> {
@@ -165,6 +166,10 @@ export async function openBleSession(device: BluetoothDevice): Promise<{
 
   const requestScan = async () => {
     await q.write(cmdChar, "scan");
+  };
+
+  const disconnectWifi = async () => {
+    await q.write(cmdChar, "disconnect");
   };
 
   const forgetWifi = async () => {
@@ -206,6 +211,7 @@ export async function openBleSession(device: BluetoothDevice): Promise<{
     sendControl,
     requestStatus,
     requestScan,
+    disconnectWifi,
     forgetWifi,
     startNotify,
   };

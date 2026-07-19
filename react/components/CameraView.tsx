@@ -7,14 +7,14 @@ import type { ConnectionState } from "@/hooks/useCarSocket";
 type Props = {
   streamUrl: string | null;
   wifiReady: boolean;
-  servoAngle: number;
-  gear?: "D" | "R";
   debug?: boolean;
   left?: number;
   right?: number;
+  wheelDeg?: number;
   linkState: ConnectionState;
   transport: "wifi" | "ble" | "none";
   wifiLabel?: string;
+  lastAck?: string | null;
   onOpenLink: () => void;
 };
 
@@ -33,14 +33,14 @@ function toJpgUrl(streamOrBase: string): string {
 export function CameraView({
   streamUrl,
   wifiReady,
-  servoAngle,
-  gear = "D",
   debug,
   left = 0,
   right = 0,
+  wheelDeg = 0,
   linkState,
   transport,
   wifiLabel,
+  lastAck,
   onOpenLink,
 }: Props) {
   const [frameUrl, setFrameUrl] = useState<string | null>(null);
@@ -113,25 +113,27 @@ export function CameraView({
         <div className="z-10 space-y-1 px-4 text-center">
           <p className="font-[family-name:var(--font-display)] text-base tracking-wide text-white/50">
             {!wifiReady
-              ? "Camera needs WiFi"
+              ? transport === "ble"
+                ? "Bluetooth drive ready"
+                : "Camera needs WiFi"
               : err
                 ? "Camera offline"
                 : "Starting camera…"}
           </p>
           <p className="text-[10px] uppercase tracking-widest text-white/30">
-            {err ?? (wifiReady ? "fetching…" : "join WiFi via Link")}
+            {!wifiReady
+              ? transport === "ble"
+                ? "No WiFi · camera optional"
+                : "Link → Connect Bluetooth (WiFi optional for camera)"
+              : err
+                ? err
+                : "fetching…"}
           </p>
         </div>
       )}
 
-      <div className="pointer-events-none absolute inset-x-0 top-0 z-20 flex items-start justify-between gap-2 px-3 pt-2">
-        <span
-          className={`steer-chip glass-chip font-mono text-[10px] text-white/70 ${gear === "R" ? "is-reverse" : ""}`}
-        >
-          <span>{servoAngle}°</span>
-          {gear === "R" ? <span className="steer-chip-rev">REVERSE</span> : null}
-        </span>
-        <div className="pointer-events-auto">
+      <div className="pointer-events-none absolute inset-x-0 top-0 z-20 flex items-start justify-end gap-2 px-3 pt-2">
+        <div className="pointer-events-auto link-stack">
           <LinkDock
             state={linkState}
             transport={transport}
@@ -139,16 +141,29 @@ export function CameraView({
             live={ok}
             onOpenLink={onOpenLink}
           />
+          {debug ? (
+            <div className="debug-glass w-full px-2.5 py-2 font-mono text-[9px] leading-relaxed text-white/70">
+              <p className="text-[8px] uppercase tracking-wider text-white/40">
+                Debug
+              </p>
+              <p>link={transport}</p>
+              <p>ws={linkState}</p>
+              <p>ack={lastAck ?? "—"}</p>
+              <p>wheel={wheelDeg.toFixed(0)}°</p>
+              <p>
+                L={left} R={right}
+              </p>
+              <p className="truncate" title={jpgBase ?? undefined}>
+                cam={ok ? "jpg" : "off"}
+              </p>
+              <p className="truncate text-white/45" title={jpgBase ?? undefined}>
+                {jpgBase?.replace(/^https?:\/\//, "") ?? "no-url"}
+              </p>
+              {err ? <p className="text-amber-300/90">{err}</p> : null}
+            </div>
+          ) : null}
         </div>
       </div>
-
-      {debug && (
-        <div className="pointer-events-none absolute inset-x-0 bottom-0 px-3 pb-2">
-          <span className="font-mono text-[9px] text-white/45">
-            {jpgBase ?? "no-url"} · L={left} R={right}
-          </span>
-        </div>
-      )}
     </div>
   );
 }

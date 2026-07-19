@@ -76,6 +76,8 @@ void BleProvision::onWriteCmd(const String &value) {
     if (_wifi) notifyStatus(_wifi->statusJson());
   } else if (cmd == "scan") {
     if (_wifi) _wifi->startScan();
+  } else if (cmd == "disconnect") {
+    if (_wifi) _wifi->disconnectSta();
   } else if (cmd == "forget") {
     if (_wifi) _wifi->forgetSaved();
   }

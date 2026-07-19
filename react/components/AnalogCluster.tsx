@@ -29,12 +29,6 @@ export function AnalogCluster({ speed, rpm, fuel }: Props) {
              L 320 130
              Z"
         />
-        <path
-          className="pc-shell-stroke"
-          d="M 0 78
-             A 160 72 0 0 1 320 78"
-          fill="none"
-        />
       </svg>
 
       <div className="pc-dials">

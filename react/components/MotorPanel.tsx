@@ -17,7 +17,7 @@ type Props = {
 function PedalIcon({ kind }: { kind: "accel" | "brake" }) {
   if (kind === "brake") {
     return (
-      <svg viewBox="0 0 48 64" className="h-14 w-10" aria-hidden>
+      <svg viewBox="0 0 48 64" className="h-10 w-7" aria-hidden>
         <rect x="10" y="4" width="28" height="52" rx="4" fill="currentColor" opacity="0.95" />
         <rect x="14" y="12" width="20" height="3" rx="1" fill="#fff" opacity="0.15" />
         <rect x="14" y="20" width="20" height="3" rx="1" fill="#fff" opacity="0.15" />
@@ -27,7 +27,7 @@ function PedalIcon({ kind }: { kind: "accel" | "brake" }) {
     );
   }
   return (
-    <svg viewBox="0 0 48 64" className="h-16 w-12" aria-hidden>
+    <svg viewBox="0 0 48 64" className="h-11 w-8" aria-hidden>
       <path
         d="M14 6h20c2 0 4 2 4 4v36c0 6-5 12-14 12S10 52 10 46V10c0-2 2-4 4-4z"
         fill="currentColor"
@@ -98,24 +98,34 @@ export function MotorPanel({
   return (
     <section className="pedal-stack flex flex-col items-end justify-end">
       <div className="flex items-end gap-2.5">
-        <div className="gear-gate flex flex-col items-center gap-1 px-1.5 py-1.5" role="group" aria-label="Gear">
-          <button
-            type="button"
-            disabled={!enabled}
-            className={`gear-btn ${gear === "R" ? "is-active is-r" : ""}`}
-            onClick={() => onGearChange("R")}
+        <button
+          type="button"
+          disabled={!enabled}
+          className="gear-gate"
+          onClick={() => onGearChange(gear === "D" ? "R" : "D")}
+          aria-label={gear === "D" ? "Switch to Reverse" : "Switch to Drive"}
+          aria-pressed={gear === "R"}
+        >
+          <span className="gear-gate-rail" aria-hidden />
+          <span
+            className={`gear-pos ${gear === "R" ? "is-active is-r" : ""}`}
+            aria-hidden
           >
-            R
-          </button>
-          <button
-            type="button"
-            disabled={!enabled}
-            className={`gear-btn ${gear === "D" ? "is-active is-d" : ""}`}
-            onClick={() => onGearChange("D")}
+            <span className="gear-pos-letter">R</span>
+            <span className="gear-pos-name">Rev</span>
+          </span>
+          <span
+            className={`gear-indicator ${gear === "R" ? "at-r" : "at-d"}`}
+            aria-hidden
+          />
+          <span
+            className={`gear-pos ${gear === "D" ? "is-active is-d" : ""}`}
+            aria-hidden
           >
-            D
-          </button>
-        </div>
+            <span className="gear-pos-letter">D</span>
+            <span className="gear-pos-name">Drive</span>
+          </span>
+        </button>
 
         <button
           type="button"

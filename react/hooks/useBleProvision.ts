@@ -40,6 +40,7 @@ export function useBleProvision() {
   const sendControlRef = useRef<((payload: string) => Promise<void>) | null>(null);
   const requestScanRef = useRef<(() => Promise<void>) | null>(null);
   const forgetWifiRef = useRef<(() => Promise<void>) | null>(null);
+  const disconnectWifiRef = useRef<(() => Promise<void>) | null>(null);
   const stopNotifyRef = useRef<(() => void) | null>(null);
   const writeBusyRef = useRef(false);
   const pendingControlRef = useRef<string | null>(null);
@@ -70,13 +71,18 @@ export function useBleProvision() {
     void flushControl();
   };
 
-  const disconnect = () => {
+  const clearSessionRefs = () => {
     stopNotifyRef.current?.();
     stopNotifyRef.current = null;
     sendWifiRef.current = null;
     sendControlRef.current = null;
     requestScanRef.current = null;
     forgetWifiRef.current = null;
+    disconnectWifiRef.current = null;
+  };
+
+  const disconnect = () => {
+    clearSessionRefs();
     deviceRef.current?.gatt?.disconnect();
     deviceRef.current = null;
     setBleState("idle");
@@ -89,13 +95,7 @@ export function useBleProvision() {
     setControlError(null);
     setBleState("connecting");
     try {
-      // Clean previous session without flipping UI back to idle
-      stopNotifyRef.current?.();
-      stopNotifyRef.current = null;
-      sendWifiRef.current = null;
-      sendControlRef.current = null;
-      requestScanRef.current = null;
-      forgetWifiRef.current = null;
+      clearSessionRefs();
       try {
         deviceRef.current?.gatt?.disconnect();
       } catch {
@@ -108,9 +108,7 @@ export function useBleProvision() {
       device.addEventListener("gattserverdisconnected", () => {
         setBleState("idle");
         setError("Bluetooth disconnected — tap Connect again");
-        stopNotifyRef.current?.();
-        stopNotifyRef.current = null;
-        sendControlRef.current = null;
+        clearSessionRefs();
       });
 
       const session = await openBleSession(device);
@@ -118,8 +116,8 @@ export function useBleProvision() {
       sendControlRef.current = session.sendControl;
       requestScanRef.current = session.requestScan;
       forgetWifiRef.current = session.forgetWifi;
+      disconnectWifiRef.current = session.disconnectWifi;
 
-      // Notifications only first — no extra writes yet (avoids GATT race on Windows)
       stopNotifyRef.current = await session.startNotify((s) => {
         if (s.wifi === "scan" && s.networks) {
           setNetworks(s.networks.filter((n) => n.ssid));
@@ -137,7 +135,6 @@ export function useBleProvision() {
 
       setBleState("connected");
 
-      // Gentle status + center after a beat
       window.setTimeout(() => {
         void session.requestStatus().catch(() => undefined);
         void session.sendControl(centerMessage()).catch(() => undefined);
@@ -180,6 +177,22 @@ export function useBleProvision() {
     }
   };
 
+  const disconnectWifi = async () => {
+    if (!disconnectWifiRef.current) throw new Error("Bluetooth not connected");
+    try {
+      await disconnectWifiRef.current();
+      setWifiStatus((prev) => ({
+        ...prev,
+        wifi: "disconnected",
+        ip: undefined,
+        ws: undefined,
+        stream: undefined,
+      }));
+    } catch (e) {
+      setError(friendlyBleError(e));
+    }
+  };
+
   return {
     mounted,
     supported,
@@ -193,6 +206,7 @@ export function useBleProvision() {
     provisionWifi,
     scanWifi,
     forgetWifi,
+    disconnectWifi,
     sendSteerBle: (angle: number) => queueControl(steerMessage(angle)),
     sendCenterBle: () => queueControl(centerMessage()),
     sendDriveBle: (left: number, right: number) =>
