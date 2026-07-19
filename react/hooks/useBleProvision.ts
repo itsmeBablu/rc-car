@@ -11,6 +11,7 @@ import {
 import {
   centerMessage,
   driveMessage,
+  lightsMessage,
   steerMessage,
   stopMessage,
 } from "@/lib/protocol";
@@ -197,5 +198,6 @@ export function useBleProvision() {
     sendDriveBle: (left: number, right: number) =>
       queueControl(driveMessage(left, right)),
     sendStopBle: () => queueControl(stopMessage()),
+    sendLightsBle: (on: boolean) => queueControl(lightsMessage(on)),
   };
 }

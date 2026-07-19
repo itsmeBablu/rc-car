@@ -20,8 +20,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "RC-Car · Servo",
-  description: "WiFi RC car cockpit — servo steer step 1",
+  title: "GT2 RS · RC Cockpit",
+  description: "1:24 Porsche GT2 RS WiFi RC car cockpit",
 };
 
 export const viewport: Viewport = {
@@ -29,7 +29,8 @@ export const viewport: Viewport = {
   initialScale: 1,
   maximumScale: 1,
   userScalable: false,
-  themeColor: "#0a0b0d",
+  themeColor: "#070809",
+  viewportFit: "cover",
 };
 
 export default function RootLayout({

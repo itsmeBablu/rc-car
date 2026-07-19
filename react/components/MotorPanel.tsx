@@ -1,30 +1,62 @@
 "use client";
 
-import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { useEffect, useRef, useState } from "react";
 import { MOTOR_MAX } from "@/lib/protocol";
 
 type Gear = "D" | "R";
 
 type Props = {
   enabled: boolean;
+  gear: Gear;
+  onGearChange: (g: Gear) => void;
   onDrive: (left: number, right: number) => void;
   onStop: () => void;
   speed?: number;
 };
 
+function PedalIcon({ kind }: { kind: "accel" | "brake" }) {
+  if (kind === "brake") {
+    return (
+      <svg viewBox="0 0 48 64" className="h-14 w-10" aria-hidden>
+        <rect x="10" y="4" width="28" height="52" rx="4" fill="currentColor" opacity="0.95" />
+        <rect x="14" y="12" width="20" height="3" rx="1" fill="#fff" opacity="0.15" />
+        <rect x="14" y="20" width="20" height="3" rx="1" fill="#fff" opacity="0.15" />
+        <rect x="14" y="28" width="20" height="3" rx="1" fill="#fff" opacity="0.15" />
+        <rect x="14" y="36" width="20" height="3" rx="1" fill="#fff" opacity="0.15" />
+      </svg>
+    );
+  }
+  return (
+    <svg viewBox="0 0 48 64" className="h-16 w-12" aria-hidden>
+      <path
+        d="M14 6h20c2 0 4 2 4 4v36c0 6-5 12-14 12S10 52 10 46V10c0-2 2-4 4-4z"
+        fill="currentColor"
+        opacity="0.95"
+      />
+      <path
+        d="M18 14h12M18 22h12M18 30h12M18 38h12"
+        stroke="#fff"
+        strokeWidth="2"
+        strokeLinecap="round"
+        opacity="0.2"
+      />
+    </svg>
+  );
+}
+
 export function MotorPanel({
   enabled,
+  gear,
+  onGearChange,
   onDrive,
   onStop,
   speed = Math.round(MOTOR_MAX * 0.85),
 }: Props) {
-  const [gear, setGear] = useState<Gear>("D");
   const [accel, setAccel] = useState(false);
   const gearRef = useRef(gear);
   const accelRef = useRef(accel);
   const onDriveRef = useRef(onDrive);
   const onStopRef = useRef(onStop);
-  const draggedRef = useRef(false);
   gearRef.current = gear;
   accelRef.current = accel;
   onDriveRef.current = onDrive;
@@ -63,129 +95,62 @@ export function MotorPanel({
     };
   }, []);
 
-  const selectGear = (next: Gear) => {
-    if (!enabled || next === gearRef.current) return;
-    setGear(next);
-  };
-
-  const onKnobPointerDown = (e: ReactPointerEvent<HTMLButtonElement>) => {
-    if (!enabled) return;
-    e.currentTarget.setPointerCapture(e.pointerId);
-    draggedRef.current = false;
-    const startY = e.clientY;
-    const startGear = gearRef.current;
-
-    const onMove = (ev: PointerEvent) => {
-      const dy = ev.clientY - startY;
-      if (Math.abs(dy) > 8) draggedRef.current = true;
-      if (dy < -18) selectGear("R");
-      else if (dy > 18) selectGear("D");
-      else selectGear(startGear);
-    };
-
-    const onUp = () => {
-      window.removeEventListener("pointermove", onMove);
-      window.removeEventListener("pointerup", onUp);
-    };
-
-    window.addEventListener("pointermove", onMove);
-    window.addEventListener("pointerup", onUp);
-  };
-
   return (
-    <section className="flex w-full flex-col gap-4 border border-white/10 bg-black/35 p-4">
-      <p className="font-[family-name:var(--font-display)] text-sm tracking-wider text-[var(--paint)]">
-        DRIVE
-      </p>
-
-      <div className="flex items-stretch gap-4">
-        <div
-          className={`gear-gate relative flex w-16 shrink-0 flex-col justify-between py-1 ${
-            enabled ? "" : "opacity-40"
-          }`}
-          role="group"
-          aria-label="Gear selector"
-        >
+    <section className="pedal-stack flex flex-col items-end justify-end">
+      <div className="flex items-end gap-2.5">
+        <div className="gear-gate flex flex-col items-center gap-1 px-1.5 py-1.5" role="group" aria-label="Gear">
           <button
             type="button"
             disabled={!enabled}
-            onClick={() => selectGear("R")}
-            className={`gear-label z-10 text-center text-sm font-bold tracking-widest ${
-              gear === "R" ? "text-amber-300" : "text-white/35"
-            }`}
+            className={`gear-btn ${gear === "R" ? "is-active is-r" : ""}`}
+            onClick={() => onGearChange("R")}
           >
             R
           </button>
-
-          <div className="gear-slot absolute inset-x-1/2 top-7 bottom-7 w-1.5 -translate-x-1/2 rounded-full" />
-
           <button
             type="button"
             disabled={!enabled}
-            aria-pressed={gear === "R"}
-            onPointerDown={onKnobPointerDown}
-            onClick={() => {
-              if (draggedRef.current) return;
-              selectGear(gear === "R" ? "D" : "R");
-            }}
-            className={`gear-knob absolute left-1/2 z-20 h-7 w-7 -translate-x-1/2 rounded-full transition-[top] duration-200 ease-out ${
-              gear === "R" ? "top-6" : "top-[calc(100%-2.75rem)]"
-            }`}
-            title="Slide up = R · down = D"
-          />
-
-          <button
-            type="button"
-            disabled={!enabled}
-            onClick={() => selectGear("D")}
-            className={`gear-label z-10 text-center text-sm font-bold tracking-widest ${
-              gear === "D" ? "text-emerald-300" : "text-white/35"
-            }`}
+            className={`gear-btn ${gear === "D" ? "is-active is-d" : ""}`}
+            onClick={() => onGearChange("D")}
           >
             D
           </button>
         </div>
 
-        <div className="grid min-w-0 flex-1 grid-cols-2 gap-3">
-          <button
-            type="button"
-            disabled={!enabled}
-            className={`select-none border py-8 text-sm font-semibold tracking-widest uppercase disabled:opacity-40 ${
-              accel
-                ? "border-[var(--paint)] bg-[var(--paint)]/25 text-[var(--paint)]"
-                : "border-white/25 text-white/80 active:bg-white/10"
-            }`}
-            onPointerDown={(e) => {
-              e.currentTarget.setPointerCapture(e.pointerId);
-              applyAccel(true);
-            }}
-            onPointerUp={() => applyAccel(false)}
-            onPointerCancel={() => applyAccel(false)}
-            onContextMenu={(e) => e.preventDefault()}
-          >
-            Accel
-          </button>
+        <button
+          type="button"
+          disabled={!enabled}
+          className="pedal pedal-brake glass-pedal pedal-lg disabled:opacity-40"
+          onPointerDown={(e) => {
+            e.currentTarget.setPointerCapture(e.pointerId);
+            setAccel(false);
+            accelRef.current = false;
+            onStopRef.current();
+          }}
+          onContextMenu={(e) => e.preventDefault()}
+          aria-label="Brake"
+        >
+          <PedalIcon kind="brake" />
+          <span className="pedal-label">Brake</span>
+        </button>
 
-          <button
-            type="button"
-            disabled={!enabled}
-            className="select-none border border-red-400/50 py-8 text-sm font-semibold tracking-widest uppercase text-red-300 active:bg-red-400/20 disabled:opacity-40"
-            onPointerDown={(e) => {
-              e.currentTarget.setPointerCapture(e.pointerId);
-              setAccel(false);
-              accelRef.current = false;
-              onStopRef.current();
-            }}
-            onContextMenu={(e) => e.preventDefault()}
-          >
-            Brake
-          </button>
-        </div>
+        <button
+          type="button"
+          disabled={!enabled}
+          className={`pedal pedal-accel glass-pedal pedal-lg disabled:opacity-40 ${accel ? "is-pressed" : ""}`}
+          onPointerDown={(e) => {
+            e.currentTarget.setPointerCapture(e.pointerId);
+            applyAccel(true);
+          }}
+          onPointerUp={() => applyAccel(false)}
+          onPointerCancel={() => applyAccel(false)}
+          onContextMenu={(e) => e.preventDefault()}
+          aria-label="Throttle"
+        >
+          <PedalIcon kind="accel" />
+          <span className="pedal-label">Gas</span>
+        </button>
       </div>
-
-      <p className="text-center text-[11px] text-white/35">
-        {gear === "D" ? "D — forward" : "R — reverse"} · both motors
-      </p>
     </section>
   );
 }

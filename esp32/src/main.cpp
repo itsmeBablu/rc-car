@@ -1,6 +1,8 @@
 #include <Arduino.h>
+#include <WiFi.h>
 
 #include "ble_provision.h"
+#include "camera_stream.h"
 #include "config.h"
 #include "motor_control.h"
 #include "servo_control.h"
@@ -12,18 +14,22 @@ MotorControl motors;
 WifiControl wifi;
 BleProvision ble;
 WebsocketControl websocket;
+CameraStream camera;
 
 void setup() {
   Serial.begin(115200);
   delay(800);
   Serial.println();
-  Serial.println("=== RC-Car: BLE control + optional WiFi ===");
+  Serial.println("=== RC-Car: BLE + WiFi + camera ===");
 
-  // Motors BEFORE servo — keep GPIO ownership clear
+  // Camera FIRST — needs LEDC timer 0 + PSRAM before servo steals channels
+  if (!camera.begin()) {
+    Serial.println("[cam] unavailable — drive still works");
+  }
+
   motors.begin();
   servo.begin();
 
-  // BLE first — primary control link when no WiFi
   ble.begin(&wifi, &servo, &motors);
 
   wifi.begin([](const String &json) {
@@ -32,21 +38,26 @@ void setup() {
       if (!websocket.isRunning()) {
         websocket.begin(&servo, &motors);
       }
+      camera.startServer();
       if (!ble.isClientConnected()) {
         ble.restartAdvertising();
       }
     }
   });
 
-  // Only auto-join networks that previously connected successfully
   delay(500);
   wifi.trySaved();
 
-  Serial.println("[ready] BLE name: RC Car | WiFi optional via app");
+  Serial.println("[ready] BLE: RC Car | open http://<ip>/jpg when WiFi up");
 }
 
 void loop() {
   ble.loop();
   wifi.loop();
   websocket.loop();
+  // If WiFi came up without callback race, ensure HTTP cam is on
+  if (WiFi.status() == WL_CONNECTED && !camera.isServerRunning()) {
+    camera.startServer();
+  }
+  camera.loop();
 }

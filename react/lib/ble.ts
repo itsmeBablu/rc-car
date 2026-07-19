@@ -14,6 +14,7 @@ export type WifiStatus = {
   ip?: string;
   ssid?: string;
   ws?: string;
+  stream?: string;
   error?: string;
   ble?: string;
   networks?: WifiNetwork[];

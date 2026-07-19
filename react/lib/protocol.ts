@@ -45,3 +45,7 @@ export function driveMessage(left: number, right: number): string {
 export function stopMessage(): string {
   return JSON.stringify({ cmd: "stop" });
 }
+
+export function lightsMessage(on: boolean): string {
+  return JSON.stringify({ cmd: "lights", on });
+}

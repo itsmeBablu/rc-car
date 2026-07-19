@@ -5,6 +5,7 @@ import {
   centerMessage,
   DEFAULT_WS_URL,
   driveMessage,
+  lightsMessage,
   steerMessage,
   stopMessage,
 } from "@/lib/protocol";
@@ -59,6 +60,10 @@ export function useCarSocket(options: Options = {}) {
   const sendStop = useEffectEvent(() => {
     angleRef.current = 90;
     return sendRaw(stopMessage());
+  });
+
+  const sendLights = useEffectEvent((on: boolean) => {
+    return sendRaw(lightsMessage(on));
   });
 
   const connect = useEffectEvent(() => {
@@ -120,5 +125,5 @@ export function useCarSocket(options: Options = {}) {
     };
   }, [enabled, url]);
 
-  return { state, lastAck, sendSteer, sendCenter, sendDrive, sendStop };
+  return { state, lastAck, sendSteer, sendCenter, sendDrive, sendStop, sendLights };
 }

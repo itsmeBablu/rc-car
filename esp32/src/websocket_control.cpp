@@ -67,6 +67,9 @@ void WebsocketControl::handleMessage(uint8_t num, const char *msg) {
   } else if (strcmp(cmd, "stop") == 0) {
     if (_motors) _motors->stop();
     if (_servo) _servo->setAngle(SERVO_CENTER);
+  } else if (strcmp(cmd, "lights") == 0) {
+    bool on = doc["on"] | false;
+    Serial.printf("[ws] lights %s (wire LED pin later)\n", on ? "ON" : "OFF");
   } else {
     _ws.sendTXT(num, "{\"ok\":false,\"error\":\"unknown_cmd\"}");
     return;

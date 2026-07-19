@@ -14,6 +14,7 @@ static const char *BLE_STATUS_UUID = "c0de0005-0c10-4a1a-9c1e-00a1b2c3d4e5";
 static const char *BLE_CONTROL_UUID = "c0de0006-0c10-4a1a-9c1e-00a1b2c3d4e5";
 
 static const uint16_t WS_PORT = 81;
+static const uint16_t CAMERA_HTTP_PORT = 80;
 static const char *MDNS_HOSTNAME = "rc-car";
 
 // MG90S signal

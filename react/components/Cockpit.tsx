@@ -1,13 +1,15 @@
 "use client";
 
 import { useEffect, useEffectEvent, useRef, useState } from "react";
-import { ConnectionStatus } from "@/components/ConnectionStatus";
+import { AnalogCluster } from "@/components/AnalogCluster";
+import { CameraView } from "@/components/CameraView";
 import { LinkSettingsModal } from "@/components/LinkSettingsModal";
 import { MotorPanel } from "@/components/MotorPanel";
 import { SteeringWheel } from "@/components/SteeringWheel";
 import { useBleProvision } from "@/hooks/useBleProvision";
 import { useCarSocket } from "@/hooks/useCarSocket";
 import {
+  MOTOR_MAX,
   SERVO_CENTER,
   saveStoredWsUrl,
   wheelDegToServo,
@@ -22,6 +24,9 @@ export function Cockpit() {
   const [servoAngle, setServoAngle] = useState(SERVO_CENTER);
   const [left, setLeft] = useState(0);
   const [right, setRight] = useState(0);
+  const [lightsOn, setLightsOn] = useState(false);
+  const [gear, setGear] = useState<"D" | "R">("D");
+  const [batteryPct, setBatteryPct] = useState(92);
   const animRef = useRef<number | null>(null);
 
   const wifiReady = ble.wifiStatus?.wifi === "connected";
@@ -29,6 +34,9 @@ export function Cockpit() {
   const derivedWs =
     ble.wifiStatus?.ws ||
     (ble.wifiStatus?.ip ? `ws://${ble.wifiStatus.ip}:81` : "");
+  const streamUrl =
+    ble.wifiStatus?.stream ||
+    (ble.wifiStatus?.ip ? `http://${ble.wifiStatus.ip}/stream` : null);
 
   const onWifiReady = useEffectEvent((url: string) => {
     saveStoredWsUrl(url);
@@ -48,6 +56,7 @@ export function Cockpit() {
     sendCenter: sendCenterWs,
     sendDrive: sendDriveWs,
     sendStop: sendStopWs,
+    sendLights: sendLightsWs,
   } = useCarSocket({
     url: wsUrl || "ws://0.0.0.0:81",
     enabled: Boolean(wsUrl) && wifiReady,
@@ -82,6 +91,13 @@ export function Cockpit() {
     setServoAngle(SERVO_CENTER);
     if (transport === "wifi") sendStopWs();
     else if (transport === "ble") ble.sendStopBle();
+  };
+
+  const toggleLights = () => {
+    const next = !lightsOn;
+    setLightsOn(next);
+    if (transport === "wifi") sendLightsWs(next);
+    else if (transport === "ble") ble.sendLightsBle(next);
   };
 
   const applyWheel = (deg: number) => {
@@ -143,12 +159,22 @@ export function Cockpit() {
     };
   }, [halt]);
 
-  const linkLabel =
-    transport === "wifi"
-      ? wsUrl
-      : transport === "ble"
-        ? "bluetooth control"
-        : "connect Bluetooth";
+  useEffect(() => {
+    const moving = Math.abs(left) > 20 || Math.abs(right) > 20;
+    if (!moving) return;
+    // Drain at a fixed rate while motors are active (no sticky counter)
+    const id = setInterval(() => {
+      setBatteryPct((b) => Math.max(5, b - 0.15));
+    }, 2000);
+    return () => clearInterval(id);
+  }, [left, right]);
+
+  const speedKmh = Math.round(
+    (Math.max(Math.abs(left), Math.abs(right)) / MOTOR_MAX) * 330,
+  );
+  const rpm = Math.round(
+    (Math.max(Math.abs(left), Math.abs(right)) / MOTOR_MAX) * 7.5 * 10,
+  ) / 10;
 
   const linkState =
     transport === "wifi"
@@ -160,24 +186,11 @@ export function Cockpit() {
           : "idle";
 
   return (
-    <div className="cockpit flex min-h-dvh flex-col text-white">
-      <header className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-6">
-        <div>
-          <p className="font-[family-name:var(--font-display)] text-2xl tracking-wide text-[var(--paint)] sm:text-3xl">
-            RC-CAR
-          </p>
-          <p className="text-xs uppercase tracking-[0.2em] text-[var(--rim)]">
-            Drive · steer
-          </p>
-        </div>
-        <ConnectionStatus state={linkState} url={linkLabel} />
-        <button
-          type="button"
-          onClick={() => setSettingsOpen(true)}
-          className="border border-white/25 px-3 py-1.5 text-xs text-white/75 hover:bg-white/5"
-        >
-          Link
-        </button>
+    <div className="cockpit cockpit-graph relative flex h-dvh max-h-dvh flex-col overflow-hidden text-white">
+      <header className="pointer-events-none absolute inset-x-0 top-0 z-20 flex items-center px-3 pt-1.5 sm:px-4">
+        <p className="font-[family-name:var(--font-display)] text-sm tracking-[0.14em] text-[var(--paint)] drop-shadow-[0_1px_4px_rgba(0,0,0,0.8)]">
+          GT2 RS
+        </p>
       </header>
 
       <LinkSettingsModal
@@ -200,39 +213,60 @@ export function Cockpit() {
         onForgetWifi={ble.forgetWifi}
       />
 
-      <main className="grid flex-1 grid-cols-1 items-center gap-6 px-4 pb-8 sm:grid-cols-[1fr_1.1fr] sm:px-8 lg:grid-cols-[1fr_1.1fr_0.95fr]">
-        <section className="flex flex-col items-center justify-center">
-          <SteeringWheel
-            wheelDeg={wheelDeg}
-            onWheelDeg={applyWheel}
-            onRelease={autoCenter}
+      <main className="cockpit-layout relative z-10 grid min-h-0 flex-1 gap-0 p-0">
+        {/* Fullscreen live feed — controls & gauges overlay */}
+        <section className="cockpit-windscreen flex min-h-0 items-stretch justify-center">
+          <CameraView
+            streamUrl={streamUrl}
+            wifiReady={wifiReady}
+            servoAngle={servoAngle}
+            gear={gear}
             debug={debug}
+            left={left}
+            right={right}
+            linkState={linkState}
+            transport={transport}
+            wifiLabel={wifiReady ? ble.wifiStatus?.ws : undefined}
+            onOpenLink={() => setSettingsOpen(true)}
           />
-          <p className="mt-3 text-center text-xs text-white/40">
-            {transport === "ble" && "Bluetooth link"}
-            {transport === "wifi" && "WiFi WebSocket"}
-            {transport === "none" && "Open Link → Connect Bluetooth"}
-          </p>
-        </section>
 
-        <section className="flex flex-col items-center justify-center gap-2 text-center">
-          <div className="windscreen flex aspect-[16/10] w-full max-w-xl items-center justify-center">
-            <div className="space-y-1">
-              <p className="font-[family-name:var(--font-display)] text-4xl text-[var(--paint)]">
-                {servoAngle}°
-              </p>
-              <p className="text-xs uppercase tracking-widest text-white/35">servo</p>
-              {debug && (
-                <p className="font-mono text-[11px] text-white/40">
-                  L={left} R={right}
-                </p>
-              )}
+          <div className="cockpit-wheel">
+            <div className="wheel-lights">
+              <button
+                type="button"
+                className={`lights-switch ${lightsOn ? "is-on" : ""}`}
+                onClick={toggleLights}
+                aria-pressed={lightsOn}
+                aria-label="Lights"
+              >
+                <span className="lights-switch-track">
+                  <span className="lights-switch-mark top">ON</span>
+                  <span className={`lights-switch-knob ${lightsOn ? "up" : "down"}`} />
+                  <span className="lights-switch-mark bot">OFF</span>
+                </span>
+              </button>
             </div>
+            <SteeringWheel
+              wheelDeg={wheelDeg}
+              onWheelDeg={applyWheel}
+              onRelease={autoCenter}
+              debug={debug}
+            />
           </div>
-        </section>
 
-        <section className="flex flex-col gap-4 lg:w-full lg:justify-self-end">
-          <MotorPanel enabled={canDrive} onDrive={sendDrive} onStop={sendStop} />
+          <div className="cockpit-analog">
+            <AnalogCluster speed={speedKmh} rpm={rpm} fuel={batteryPct} />
+          </div>
+
+          <div className="cockpit-pedals">
+            <MotorPanel
+              enabled={canDrive}
+              gear={gear}
+              onGearChange={setGear}
+              onDrive={sendDrive}
+              onStop={sendStop}
+            />
+          </div>
         </section>
       </main>
     </div>

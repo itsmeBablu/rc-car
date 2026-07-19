@@ -106,6 +106,9 @@ void BleProvision::onWriteControl(const String &value) {
   } else if (strcmp(cmd, "stop") == 0) {
     if (_motors) _motors->stop();
     if (_servo) _servo->setAngle(SERVO_CENTER);
+  } else if (strcmp(cmd, "lights") == 0) {
+    bool on = doc["on"] | false;
+    Serial.printf("[ble] lights %s (wire LED pin later)\n", on ? "ON" : "OFF");
   }
 }
 

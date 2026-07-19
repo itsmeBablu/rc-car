@@ -70,6 +70,8 @@ String WifiControl::statusJson() const {
     doc["ip"] = WiFi.localIP().toString();
     doc["ssid"] = WiFi.SSID();
     doc["ws"] = String("ws://") + WiFi.localIP().toString() + ":" + String(WS_PORT);
+    doc["stream"] =
+        String("http://") + WiFi.localIP().toString() + "/stream";
   } else if (_connecting) {
     doc["wifi"] = "connecting";
     doc["ssid"] = _ssid;

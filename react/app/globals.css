@@ -1,10 +1,11 @@
 @import "tailwindcss";
 
 :root {
-  --paint: #f2d329;
-  --rim: #b48e63;
-  --dash: #121416;
-  --dash-deep: #0a0b0d;
+  --paint: #f5e000;
+  --rim: #c4a574;
+  --glass: rgba(255, 255, 255, 0.08);
+  --glass-border: rgba(255, 255, 255, 0.18);
+  --dash-deep: #070809;
   --background: var(--dash-deep);
   --foreground: #f5f5f0;
 }
@@ -30,13 +31,13 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: var(--font-body), system-ui, sans-serif;
-  overflow-x: hidden;
+  overflow: hidden;
+  -webkit-tap-highlight-color: transparent;
 }
 
-/* Force landscape-friendly cockpit feel on phones */
 @media (orientation: portrait) and (max-width: 900px) {
   body::after {
-    content: "Rotate phone to landscape";
+    content: "Rotate to landscape";
     position: fixed;
     inset: 0;
     z-index: 50;
@@ -45,8 +46,8 @@ body {
     background: var(--dash-deep);
     color: var(--paint);
     font-family: var(--font-display), sans-serif;
-    font-size: 1.25rem;
-    letter-spacing: 0.08em;
+    font-size: 1.1rem;
+    letter-spacing: 0.1em;
     text-transform: uppercase;
     text-align: center;
     padding: 2rem;
@@ -55,30 +56,755 @@ body {
 
 .cockpit {
   background:
-    radial-gradient(ellipse 80% 60% at 50% 0%, rgba(242, 211, 41, 0.08), transparent 55%),
-    repeating-linear-gradient(
-      0deg,
-      transparent,
-      transparent 2px,
-      rgba(255, 255, 255, 0.015) 2px,
-      rgba(255, 255, 255, 0.015) 3px
-    ),
-    repeating-linear-gradient(
-      90deg,
-      transparent,
-      transparent 2px,
-      rgba(255, 255, 255, 0.015) 2px,
-      rgba(255, 255, 255, 0.015) 3px
-    ),
-    linear-gradient(160deg, #1a1c20 0%, #0c0d10 45%, #15131a 100%);
+    radial-gradient(ellipse 80% 55% at 50% -5%, rgba(245, 224, 0, 0.07), transparent 55%),
+    linear-gradient(165deg, #1a1c22 0%, #0a0b0d 48%, #12141a 100%);
 }
 
-.windscreen {
-  border: 1px solid rgba(180, 142, 99, 0.35);
+/* Yellow thin graph — full background */
+.cockpit-graph::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0.45;
+  background-image:
+    linear-gradient(rgba(245, 224, 0, 0.14) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(245, 224, 0, 0.1) 1px, transparent 1px);
+  background-size: 22px 22px, 22px 22px;
+}
+
+.cockpit-layout {
+  position: relative;
+  grid-template-columns: 1fr;
+  grid-template-rows: minmax(0, 1fr);
+  grid-template-areas: "cam";
+  align-items: stretch;
+  overflow: hidden;
+}
+
+.cockpit-windscreen {
+  grid-area: cam;
+  position: relative;
+  min-height: 0;
+  z-index: 1;
+  overflow: hidden;
+}
+
+/* Steer / lights / pedals — bottom-aligned with a little margin */
+.cockpit-wheel {
+  position: absolute;
+  left: 0.4rem;
+  bottom: 0.45rem;
+  z-index: 6;
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-start;
+  pointer-events: none;
+}
+
+.cockpit-wheel > * {
+  pointer-events: auto;
+}
+
+/* Gauges float over the fullscreen feed — flush to screen bottom */
+.cockpit-analog {
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  transform: translateX(-50%);
+  z-index: 5;
+  pointer-events: none;
+  margin: 0;
+  padding: 0;
+  line-height: 0;
+}
+
+.cockpit-analog > * {
+  pointer-events: auto;
+}
+
+.cockpit-pedals {
+  position: absolute;
+  right: 0.4rem;
+  bottom: 0.45rem;
+  z-index: 6;
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-end;
+  pointer-events: none;
+}
+
+.cockpit-pedals > * {
+  pointer-events: auto;
+}
+
+@media (max-width: 700px) and (orientation: landscape) {
+  .cockpit-layout {
+    grid-template-columns: 1fr;
+    grid-template-rows: minmax(0, 1fr);
+    gap: 0;
+  }
+  .cockpit-wheel {
+    left: 0.25rem;
+    bottom: 0.35rem;
+  }
+  .cockpit-pedals {
+    right: 0.25rem;
+    bottom: 0.35rem;
+  }
+}
+
+/* —— Liquid glass (iOS-like) —— */
+.glass-panel {
+  border-radius: 1.1rem;
+  border: 1px solid var(--glass-border);
   background:
-    linear-gradient(180deg, rgba(180, 200, 220, 0.12), rgba(10, 12, 16, 0.55)),
-    linear-gradient(135deg, #1c222b, #0e1014);
-  box-shadow: inset 0 0 40px rgba(0, 0, 0, 0.45);
+    linear-gradient(145deg, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0.04));
+  backdrop-filter: blur(22px) saturate(1.4);
+  -webkit-backdrop-filter: blur(22px) saturate(1.4);
+  box-shadow:
+    0 8px 28px rgba(0, 0, 0, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.22);
+}
+
+.glass-pill {
+  border-radius: 999px;
+  border: 1px solid var(--glass-border);
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.05));
+  backdrop-filter: blur(24px) saturate(1.5);
+  -webkit-backdrop-filter: blur(24px) saturate(1.5);
+  box-shadow:
+    0 10px 30px rgba(0, 0, 0, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.28);
+}
+
+.glass-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  border-radius: 999px;
+  border: 1px solid var(--glass-border);
+  background: linear-gradient(160deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.05));
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  padding: 0.45rem 0.85rem;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25);
+  transition: transform 100ms ease, background 150ms ease, color 150ms ease;
+}
+
+.glass-btn.is-on {
+  color: var(--paint);
+  border-color: rgba(245, 224, 0, 0.45);
+  box-shadow:
+    0 0 16px rgba(245, 224, 0, 0.25),
+    inset 0 1px 0 rgba(255, 255, 255, 0.3);
+}
+
+.glass-btn:active {
+  transform: scale(0.96);
+}
+
+/* Vertical lights rocker — up = ON, down = OFF */
+.lights-switch {
+  border: none;
+  background: transparent;
+  padding: 0;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.lights-switch-track {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+  width: 1.65rem;
+  height: 3.35rem;
+  border-radius: 0.5rem;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  background:
+    linear-gradient(165deg, rgba(255, 255, 255, 0.28) 0%, rgba(255, 255, 255, 0.06) 38%, transparent 55%),
+    linear-gradient(180deg, rgba(40, 44, 52, 0.8), rgba(12, 13, 16, 0.8));
+  backdrop-filter: blur(14px) saturate(1.35);
+  -webkit-backdrop-filter: blur(14px) saturate(1.35);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.35),
+    inset 0 -2px 6px rgba(0, 0, 0, 0.35),
+    0 4px 14px rgba(0, 0, 0, 0.25);
+  padding: 0.25rem 0;
+}
+
+.lights-switch-mark {
+  font-size: 6px;
+  letter-spacing: 0.1em;
+  font-weight: 700;
+  opacity: 0.35;
+  z-index: 1;
+}
+
+.lights-switch-mark.top {
+  color: #f5e000;
+}
+
+.lights-switch.is-on .lights-switch-mark.top {
+  opacity: 1;
+  text-shadow: 0 0 8px rgba(245, 224, 0, 0.55);
+}
+
+.lights-switch-mark.bot {
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.lights-switch:not(.is-on) .lights-switch-mark.bot {
+  opacity: 0.85;
+}
+
+.lights-switch-knob {
+  position: absolute;
+  left: 50%;
+  width: 1.2rem;
+  height: 1rem;
+  margin-left: -0.6rem;
+  border-radius: 0.28rem;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.45) 0%, rgba(240, 230, 200, 0.8) 18%, rgba(138, 122, 90, 0.8) 55%, rgba(58, 52, 40, 0.8) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  box-shadow:
+    0 2px 5px rgba(0, 0, 0, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.55);
+  transition: top 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  z-index: 2;
+}
+
+.lights-switch-knob.up {
+  top: 0.4rem;
+}
+
+.lights-switch-knob.down {
+  top: calc(100% - 1.35rem);
+}
+
+.lights-switch.is-on .lights-switch-track {
+  box-shadow:
+    inset 0 2px 6px rgba(0, 0, 0, 0.55),
+    0 0 14px rgba(245, 224, 0, 0.2);
+}
+
+.lights-switch:active .lights-switch-knob {
+  filter: brightness(1.08);
+}
+
+.glass-chip {
+  border-radius: 999px;
+  padding: 0.2rem 0.55rem;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(10px);
+}
+
+/* Steer angle — sits below GT2 RS title */
+.steer-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: 1.55rem;
+  transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
+}
+
+.steer-chip-rev {
+  font-family: var(--font-display), sans-serif;
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  color: #fecdd3;
+}
+
+.steer-chip.is-reverse {
+  color: #fff;
+  border-color: rgba(251, 113, 133, 0.65);
+  animation: reverse-blink 0.9s ease-in-out infinite;
+}
+
+@keyframes reverse-blink {
+  0%,
+  100% {
+    background: rgba(190, 24, 46, 0.55);
+  }
+  50% {
+    background: rgba(127, 29, 29, 0.2);
+  }
+}
+
+.glass-screen {
+  display: flex;
+  border-radius: 0;
+  border: none;
+  background: #000;
+  box-shadow: none;
+  max-height: none;
+  min-height: 0;
+  height: 100%;
+  width: 100%;
+  backdrop-filter: none;
+}
+
+/* Porsche-style instrument cluster — flat bottom flush to screen */
+.porsche-cluster {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  width: 100%;
+  max-width: 26rem;
+  padding: 0.85rem 0 0;
+  margin: 0;
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  line-height: 0;
+}
+
+.pc-shell {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: -1px;
+  width: 100%;
+  height: calc(100% + 1px);
+  display: block;
+  pointer-events: none;
+  z-index: 0;
+  overflow: visible;
+}
+
+.pc-shell-fill {
+  fill: rgba(12, 14, 18, 0.1);
+}
+
+.pc-shell-stroke {
+  stroke: rgba(255, 255, 255, 0.14);
+  stroke-width: 1.2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.pc-dials {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 0.25rem;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  line-height: normal;
+}
+
+.pc-dial {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.pc-dial-side {
+  width: 4.4rem;
+}
+
+.pc-dial-center {
+  width: 6.8rem;
+  z-index: 2;
+}
+
+.pc-dial-svg {
+  width: 100%;
+  height: auto;
+  display: block;
+  vertical-align: bottom;
+}
+
+.pc-bezel {
+  fill: rgba(20, 22, 28, 0.1);
+  stroke: rgba(255, 255, 255, 0.2);
+  stroke-width: 1.2;
+}
+
+.pc-bezel-main {
+  stroke: rgba(245, 224, 0, 0.25);
+  stroke-width: 1.5;
+}
+
+.pc-face {
+  fill: rgba(12, 14, 18, 0.1);
+}
+
+.pc-tick {
+  stroke: rgba(255, 255, 255, 0.55);
+  stroke-width: 1.4;
+  stroke-linecap: round;
+}
+
+.pc-tick-red {
+  stroke: #e11d48;
+}
+
+.pc-tick-half {
+  stroke: rgba(255, 255, 255, 0.22);
+  stroke-width: 0.9;
+}
+
+.pc-tick-label {
+  fill: rgba(255, 255, 255, 0.55);
+  font-size: 5px;
+  font-weight: 600;
+}
+
+.pc-needle {
+  stroke-linecap: round;
+  stroke-width: 2;
+}
+
+.pc-needle-speed {
+  stroke: #fff;
+  filter: drop-shadow(0 0 3px rgba(255, 255, 255, 0.45));
+}
+
+.pc-needle-rpm {
+  stroke: #f5e000;
+  filter: drop-shadow(0 0 3px #f5e000aa);
+}
+
+.pc-needle-fuel {
+  stroke: #34d399;
+  filter: drop-shadow(0 0 3px #34d39988);
+}
+
+.pc-hub {
+  fill: #0a0b0e;
+  stroke: rgba(255, 255, 255, 0.35);
+  stroke-width: 1;
+}
+
+.pc-unit {
+  fill: rgba(255, 255, 255, 0.35);
+  font-size: 5.5px;
+  letter-spacing: 0.12em;
+}
+
+.pc-center-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  padding-top: 0.35rem;
+}
+
+.pc-brand {
+  font-family: var(--font-display), sans-serif;
+  font-size: 0.48rem;
+  letter-spacing: 0.18em;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.pc-speed-unit {
+  font-size: 0.4rem;
+  letter-spacing: 0.1em;
+  color: rgba(255, 255, 255, 0.35);
+  text-transform: lowercase;
+  margin-top: 0.05rem;
+}
+
+.pc-batt-row {
+  display: flex;
+  align-items: center;
+  gap: 0.2rem;
+  margin-top: 0.25rem;
+  width: 55%;
+}
+
+.pc-batt-icon {
+  width: 0.45rem;
+  height: 0.28rem;
+  border: 1px solid rgba(255, 255, 255, 0.45);
+  border-radius: 1px;
+  position: relative;
+  flex-shrink: 0;
+}
+
+.pc-batt-icon::after {
+  content: "";
+  position: absolute;
+  right: -2px;
+  top: 25%;
+  width: 1.5px;
+  height: 50%;
+  background: rgba(255, 255, 255, 0.45);
+  border-radius: 1px;
+}
+
+.pc-batt-bar {
+  flex: 1;
+  height: 0.18rem;
+  border-radius: 99px;
+  background: rgba(255, 255, 255, 0.12);
+  overflow: hidden;
+}
+
+.pc-batt-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #34d399, #f5e000);
+  border-radius: 99px;
+}
+
+.pc-dial-right {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.wheel-lights {
+  display: flex;
+  align-items: flex-end;
+  margin-right: 0.45rem;
+  margin-bottom: 0.15rem;
+}
+
+@media (max-width: 700px) and (orientation: landscape) {
+  .pc-dial-side {
+    width: 3.8rem;
+  }
+  .pc-dial-center {
+    width: 5.8rem;
+  }
+  .porsche-cluster {
+    max-width: 22rem;
+  }
+}
+
+.gear-btn {
+  width: 1.55rem;
+  height: 1.55rem;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 0.35rem;
+  background:
+    linear-gradient(160deg, rgba(255, 255, 255, 0.22) 0%, rgba(255, 255, 255, 0.04) 45%, transparent 70%),
+    rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.55);
+  font-family: var(--font-display), sans-serif;
+  font-size: 0.75rem;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 0;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25);
+}
+
+.gear-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.gear-btn.is-active.is-d {
+  background:
+    linear-gradient(160deg, rgba(255, 255, 255, 0.35) 0%, transparent 50%),
+    rgba(59, 130, 246, 0.8);
+  color: #fff;
+  border-color: rgba(147, 197, 253, 0.55);
+  box-shadow:
+    0 0 10px rgba(59, 130, 246, 0.45),
+    inset 0 1px 0 rgba(255, 255, 255, 0.4);
+}
+
+.gear-btn.is-active.is-r {
+  background:
+    linear-gradient(160deg, rgba(255, 255, 255, 0.35) 0%, transparent 50%),
+    rgba(245, 158, 11, 0.8);
+  color: #111;
+  border-color: rgba(253, 224, 71, 0.45);
+  box-shadow:
+    0 0 10px rgba(245, 158, 11, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.45);
+}
+
+.wheel-3d {
+  filter: drop-shadow(0 10px 18px rgba(0, 0, 0, 0.35));
+}
+
+.wheel.wheel-gloss svg {
+  filter: drop-shadow(0 2px 8px rgba(255, 255, 255, 0.12));
+}
+
+.pedal-lg {
+  min-width: 6.6rem !important;
+  min-height: 8.7rem !important;
+  padding: 0.85rem 1.1rem 0.55rem !important;
+}
+
+.pedal-stack {
+  width: auto;
+}
+
+.glass-gauge svg {
+  filter: drop-shadow(0 4px 10px rgba(0, 0, 0, 0.35));
+}
+
+.gauge-arc {
+  transition: stroke-dasharray 120ms linear;
+}
+
+@media (max-height: 420px) {
+  .glass-gauge svg {
+    height: 3.6rem;
+    width: 3.6rem;
+  }
+  .pedal-lg {
+    min-height: 7.2rem !important;
+    min-width: 5.6rem !important;
+  }
+}
+
+/* LIVE green beacon + waves */
+.live-beacon {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.2rem 0.55rem 0.2rem 0.35rem;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(52, 211, 153, 0.35);
+  backdrop-filter: blur(10px);
+}
+
+.live-beacon.compact {
+  padding: 0.1rem 0.35rem 0.1rem 0.25rem;
+  gap: 0.3rem;
+  background: transparent;
+  border: none;
+  backdrop-filter: none;
+}
+
+.live-beacon:not(.is-live) .live-core {
+  background: rgba(255, 255, 255, 0.35);
+  box-shadow: none;
+  animation: none;
+}
+
+.live-beacon:not(.is-live) .live-wave,
+.live-beacon:not(.is-live) .live-wave-2 {
+  display: none;
+}
+
+.live-beacon:not(.is-live) .live-text {
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.live-core {
+  position: relative;
+  z-index: 2;
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: #34d399;
+  box-shadow: 0 0 10px #34d399, 0 0 18px #34d39988;
+  animation: live-pulse 1.4s ease-in-out infinite;
+}
+
+.live-beacon.compact .live-core {
+  width: 7px;
+  height: 7px;
+}
+
+.live-wave,
+.live-wave-2 {
+  position: absolute;
+  left: 7px;
+  top: 50%;
+  width: 8px;
+  height: 8px;
+  margin-top: -4px;
+  border-radius: 999px;
+  border: 1.5px solid rgba(52, 211, 153, 0.7);
+  animation: live-wave 1.8s ease-out infinite;
+  pointer-events: none;
+}
+
+.live-beacon.compact .live-wave,
+.live-beacon.compact .live-wave-2 {
+  left: 5px;
+  width: 7px;
+  height: 7px;
+  margin-top: -3.5px;
+}
+
+.live-wave-2 {
+  animation-delay: 0.7s;
+}
+
+.live-text {
+  position: relative;
+  z-index: 2;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  color: #6ee7b7;
+}
+
+.live-beacon.compact .live-text {
+  font-size: 8px;
+  letter-spacing: 0.14em;
+}
+
+@keyframes live-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.15);
+    opacity: 0.85;
+  }
+}
+
+@keyframes live-wave {
+  0% {
+    transform: scale(1);
+    opacity: 0.85;
+  }
+  100% {
+    transform: scale(3.6);
+    opacity: 0;
+  }
+}
+
+.live-link {
+  transition: transform 120ms ease, box-shadow 120ms ease;
+}
+
+.live-link:active {
+  transform: scale(0.97);
+}
+
+.link-dock {
+  transition: transform 120ms ease, box-shadow 120ms ease;
+}
+
+.link-dock:active {
+  transform: scale(0.98);
 }
 
 .wheel {
@@ -91,55 +817,70 @@ body {
   cursor: grabbing;
 }
 
-.wheel-rim {
-  background:
-    radial-gradient(circle at 30% 30%, #3a3a3e, #121214 70%),
-    #1a1a1c;
-  border: 10px solid #2a2a2e;
-  box-shadow:
-    inset 0 0 0 3px var(--rim),
-    inset 0 0 24px rgba(0, 0, 0, 0.8);
-}
-
-.wheel-hub {
-  background: radial-gradient(circle at 35% 35%, #4a4035, #1a1612 70%);
-  border: 2px solid var(--rim);
-  box-shadow: 0 0 0 4px #111;
-}
-
-.wheel-spoke {
-  background: linear-gradient(180deg, #2c2c30, #141416);
-  border: 1px solid rgba(180, 142, 99, 0.4);
-}
-
 .link-modal {
   color: inherit;
+  border-radius: 1.25rem;
+  border: 1px solid var(--glass-border) !important;
+  background: rgba(18, 20, 26, 0.92) !important;
+  backdrop-filter: blur(28px);
 }
 
 .link-modal::backdrop {
   background: rgba(0, 0, 0, 0.65);
+  backdrop-filter: blur(6px);
 }
 
 .gear-gate {
-  min-height: 7.5rem;
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 0.75rem;
+  border: 1px solid rgba(255, 255, 255, 0.28);
   background:
-    linear-gradient(180deg, rgba(40, 42, 48, 0.9), rgba(14, 15, 18, 0.95));
-  box-shadow: inset 0 0 18px rgba(0, 0, 0, 0.55);
+    linear-gradient(165deg, rgba(255, 255, 255, 0.28) 0%, rgba(255, 255, 255, 0.06) 40%, transparent 60%),
+    linear-gradient(180deg, rgba(30, 32, 40, 0.8), rgba(10, 11, 14, 0.8));
+  backdrop-filter: blur(16px) saturate(1.4);
+  -webkit-backdrop-filter: blur(16px) saturate(1.4);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.35),
+    inset 0 -1px 8px rgba(0, 0, 0, 0.25),
+    0 6px 16px rgba(0, 0, 0, 0.25);
+}
+
+.glass-pedal {
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  backdrop-filter: blur(18px) saturate(1.45);
+  -webkit-backdrop-filter: blur(18px) saturate(1.45);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.4),
+    inset 0 -8px 16px rgba(0, 0, 0, 0.2),
+    0 8px 20px rgba(0, 0, 0, 0.28);
+}
+
+.pedal-brake {
+  color: #fda4af;
+  background:
+    linear-gradient(165deg, rgba(255, 255, 255, 0.28) 0%, rgba(255, 255, 255, 0.05) 35%, transparent 55%),
+    linear-gradient(180deg, rgba(90, 30, 36, 0.5), rgba(30, 12, 14, 0.5));
+  clip-path: polygon(12% 0, 88% 0, 100% 100%, 0 100%);
+  border-radius: 0.4rem;
+}
+
+.pedal-accel {
+  color: #f5e000;
+  background:
+    linear-gradient(165deg, rgba(255, 255, 255, 0.28) 0%, rgba(255, 255, 255, 0.05) 35%, transparent 55%),
+    linear-gradient(180deg, rgba(50, 48, 20, 0.5), rgba(18, 16, 8, 0.5));
+  clip-path: polygon(8% 0, 92% 0, 100% 100%, 0 100%);
+  border-radius: 0.55rem 0.55rem 1.1rem 1.1rem;
 }
 
 .gear-slot {
   background: linear-gradient(180deg, #2a2c32, #0c0d10);
-  box-shadow: inset 0 0 4px rgba(0, 0, 0, 0.8);
+  box-shadow: inset 0 0 3px rgba(0, 0, 0, 0.8);
 }
 
 .gear-knob {
-  background:
-    radial-gradient(circle at 35% 30%, #f0e6c8, #8a7a5a 55%, #3a3428 100%);
-  border: 2px solid rgba(180, 142, 99, 0.85);
-  box-shadow:
-    0 2px 6px rgba(0, 0, 0, 0.55),
-    inset 0 1px 0 rgba(255, 255, 255, 0.35);
+  background: radial-gradient(circle at 35% 30%, #f0e6c8, #8a7a5a 55%, #3a3428 100%);
+  border: 1.5px solid rgba(180, 142, 99, 0.85);
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.35);
   cursor: pointer;
 }
 
@@ -149,6 +890,55 @@ body {
 
 .gear-label {
   font-family: var(--font-display), sans-serif;
-  line-height: 1.2;
-  padding-block: 0.15rem;
+  line-height: 1.1;
+}
+
+.pedal {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.3rem;
+  touch-action: none;
+  user-select: none;
+  border: none;
+  padding: 0.55rem 0.75rem 0.45rem;
+  min-width: 3.9rem;
+  min-height: 5rem;
+  transition: transform 80ms ease, filter 80ms ease, box-shadow 80ms ease;
+}
+
+.pedal-label {
+  font-size: 8px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  opacity: 0.75;
+}
+
+.pedal-brake:active {
+  transform: translateY(3px) scale(0.97);
+  filter: brightness(1.2);
+}
+
+.pedal-accel.is-pressed,
+.pedal-accel:active {
+  transform: translateY(4px) scale(0.96);
+  color: var(--paint);
+  filter: brightness(1.15);
+  box-shadow:
+    inset 0 0 0 1px rgba(245, 224, 0, 0.45),
+    0 0 18px rgba(245, 224, 0, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.35);
+}
+
+@media (max-height: 420px) {
+  .pedal {
+    min-height: 4.2rem;
+    min-width: 3.4rem;
+    padding: 0.35rem 0.55rem 0.3rem;
+  }
+  .pedal-lg {
+    min-height: 7.2rem !important;
+    min-width: 5.6rem !important;
+  }
 }
