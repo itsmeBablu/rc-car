@@ -15,11 +15,15 @@ export type ConnectionState = "idle" | "connecting" | "open" | "closed" | "error
 type Options = {
   url?: string;
   enabled?: boolean;
+  onTelemetry?: (msg: Record<string, unknown>) => void;
 };
 
 export function useCarSocket(options: Options = {}) {
   const url = options.url ?? DEFAULT_WS_URL;
   const enabled = options.enabled ?? true;
+  const onTelemetry = useEffectEvent((msg: Record<string, unknown>) => {
+    options.onTelemetry?.(msg);
+  });
 
   const [state, setState] = useState<ConnectionState>("idle");
   const [lastAck, setLastAck] = useState<string | null>(null);
@@ -92,7 +96,16 @@ export function useCarSocket(options: Options = {}) {
     };
 
     ws.onmessage = (ev) => {
-      setLastAck(typeof ev.data === "string" ? ev.data : String(ev.data));
+      const text = typeof ev.data === "string" ? ev.data : String(ev.data);
+      setLastAck(text);
+      try {
+        const msg = JSON.parse(text) as Record<string, unknown>;
+        if (msg.batt != null || msg.charging != null || msg.usb != null) {
+          onTelemetry?.(msg);
+        }
+      } catch {
+        /* ack or plain text */
+      }
     };
 
     ws.onerror = () => {

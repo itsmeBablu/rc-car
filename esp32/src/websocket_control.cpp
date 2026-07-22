@@ -2,22 +2,56 @@
 #include <ArduinoJson.h>
 #include <WiFi.h>
 
+void WebsocketControl::logListen() {
+  String ip = WiFi.localIP().toString();
+  if (ip == "0.0.0.0" || ip.length() == 0) {
+    ip = WiFi.softAPIP().toString();
+  }
+  Serial.printf("[ws] listening on ws://%s:%u\n", ip.c_str(), WS_PORT);
+}
+
 void WebsocketControl::begin(ServoControl *servo, MotorControl *motors) {
-  if (_running) return;
   _servo = servo;
   _motors = motors;
 
-  _ws.onEvent([this](uint8_t num, WStype_t type, uint8_t *payload, size_t length) {
-    this->onEvent(num, type, payload, length);
-  });
+  if (!_handlerSet) {
+    _ws.onEvent([this](uint8_t num, WStype_t type, uint8_t *payload, size_t length) {
+      this->onEvent(num, type, payload, length);
+    });
+    _handlerSet = true;
+  }
+
+  if (_running) return;
   _ws.begin();
   _running = true;
-  Serial.printf("[ws] listening on ws://%s:%u\n",
-                WiFi.localIP().toString().c_str(), WS_PORT);
+  logListen();
+}
+
+void WebsocketControl::rebind() {
+  if (_running) {
+    _ws.close();
+    _running = false;
+    delay(20);
+  }
+  if (!_handlerSet) {
+    _ws.onEvent([this](uint8_t num, WStype_t type, uint8_t *payload, size_t length) {
+      this->onEvent(num, type, payload, length);
+    });
+    _handlerSet = true;
+  }
+  _ws.begin();
+  _running = true;
+  logListen();
 }
 
 void WebsocketControl::loop() {
   if (_running) _ws.loop();
+}
+
+void WebsocketControl::broadcast(const String &json) {
+  if (!_running) return;
+  String payload = json;
+  _ws.broadcastTXT(payload);
 }
 
 void WebsocketControl::onEvent(uint8_t num, WStype_t type, uint8_t *payload,

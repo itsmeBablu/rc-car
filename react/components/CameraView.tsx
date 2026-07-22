@@ -12,7 +12,6 @@ type Props = {
   right?: number;
   wheelDeg?: number;
   linkState: ConnectionState;
-  transport: "wifi" | "ble" | "none";
   wifiLabel?: string;
   lastAck?: string | null;
   onOpenLink: () => void;
@@ -38,7 +37,6 @@ export function CameraView({
   right = 0,
   wheelDeg = 0,
   linkState,
-  transport,
   wifiLabel,
   lastAck,
   onOpenLink,
@@ -113,18 +111,14 @@ export function CameraView({
         <div className="z-10 space-y-1 px-4 text-center">
           <p className="font-[family-name:var(--font-display)] text-base tracking-wide text-white/50">
             {!wifiReady
-              ? transport === "ble"
-                ? "Bluetooth drive ready"
-                : "Camera needs WiFi"
+              ? "Connect to car"
               : err
                 ? "Camera offline"
                 : "Starting camera…"}
           </p>
           <p className="text-[10px] uppercase tracking-widest text-white/30">
             {!wifiReady
-              ? transport === "ble"
-                ? "No WiFi · camera optional"
-                : "Link → Connect Bluetooth (WiFi optional for camera)"
+              ? "Tap Link → Connect"
               : err
                 ? err
                 : "fetching…"}
@@ -136,7 +130,6 @@ export function CameraView({
         <div className="pointer-events-auto link-stack">
           <LinkDock
             state={linkState}
-            transport={transport}
             wifiLabel={wifiLabel}
             live={ok}
             onOpenLink={onOpenLink}
@@ -146,7 +139,7 @@ export function CameraView({
               <p className="text-[8px] uppercase tracking-wider text-white/40">
                 Debug
               </p>
-              <p>link={transport}</p>
+              <p>link=wifi</p>
               <p>ws={linkState}</p>
               <p>ack={lastAck ?? "—"}</p>
               <p>wheel={wheelDeg.toFixed(0)}°</p>

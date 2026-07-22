@@ -1222,6 +1222,345 @@ body {
   backdrop-filter: blur(6px);
 }
 
+/* —— Connection / Link sheet —— */
+.conn-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 0.75rem;
+  background:
+    radial-gradient(ellipse 70% 40% at 50% 100%, rgba(245, 224, 0, 0.08), transparent 55%),
+    rgba(0, 0, 0, 0.72);
+  backdrop-filter: blur(8px);
+}
+
+@media (min-width: 640px) {
+  .conn-backdrop {
+    align-items: center;
+    padding: 1.25rem;
+  }
+}
+
+.conn-sheet {
+  width: 100%;
+  max-width: 22rem;
+  max-height: min(92vh, 36rem);
+  overflow: auto;
+  border-radius: 1.1rem 1.1rem 0.85rem 0.85rem;
+  border: 1px solid rgba(245, 224, 0, 0.28);
+  background:
+    linear-gradient(165deg, rgba(255, 255, 255, 0.06) 0%, transparent 42%),
+    rgba(10, 11, 14, 0.96);
+  box-shadow: 0 -8px 40px rgba(0, 0, 0, 0.45);
+  padding: 1.1rem 1.15rem 1.25rem;
+  color: #f2f2ec;
+}
+
+.conn-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 1rem;
+}
+
+.conn-kicker {
+  margin: 0;
+  font-size: 0.65rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.38);
+}
+
+.conn-title {
+  margin: 0.15rem 0 0;
+  font-family: var(--font-display), sans-serif;
+  font-size: 1.35rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--paint);
+  font-weight: 500;
+}
+
+.conn-x {
+  border: none;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.4);
+  font-size: 1.5rem;
+  line-height: 1;
+  padding: 0.15rem 0.35rem;
+  cursor: pointer;
+}
+
+.conn-x:hover {
+  color: #fff;
+}
+
+.conn-block {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.conn-stack {
+  gap: 0.85rem;
+}
+
+.conn-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.65rem;
+}
+
+@media (max-width: 380px) {
+  .conn-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+.conn-lead {
+  margin: 0;
+  font-size: 0.95rem;
+  line-height: 1.35;
+  color: rgba(255, 255, 255, 0.88);
+}
+
+.conn-ok {
+  color: #9be89a;
+}
+
+.conn-path {
+  border: 1px solid rgba(245, 224, 0, 0.28);
+  border-radius: 0.65rem;
+  padding: 0.75rem 0.85rem;
+  background: rgba(245, 224, 0, 0.06);
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.conn-path-label {
+  margin: 0;
+  font-size: 0.65rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.45);
+}
+
+.conn-path-value {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--paint);
+}
+
+.conn-hint,
+.conn-copy,
+.conn-foot {
+  margin: 0;
+  font-size: 0.8rem;
+  line-height: 1.45;
+  color: rgba(255, 255, 255, 0.52);
+}
+
+.conn-foot {
+  font-size: 0.7rem;
+  color: rgba(255, 255, 255, 0.35);
+}
+
+.conn-link {
+  color: var(--paint);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.conn-card {
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 0.75rem;
+  padding: 0.75rem 0.7rem;
+  background: rgba(255, 255, 255, 0.03);
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  min-width: 0;
+}
+
+.conn-card-top {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.conn-badge {
+  display: inline-grid;
+  place-items: center;
+  width: 1.35rem;
+  height: 1.35rem;
+  border-radius: 0.35rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: #111;
+  background: var(--paint);
+}
+
+.conn-card-title {
+  margin: 0;
+  font-size: 0.8rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.85);
+  font-weight: 600;
+}
+
+.conn-steps {
+  margin: 0;
+  padding-left: 1.1rem;
+  font-size: 0.78rem;
+  line-height: 1.55;
+  color: rgba(255, 255, 255, 0.58);
+}
+
+.conn-steps strong {
+  color: var(--paint);
+  font-weight: 600;
+}
+
+.conn-code {
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.85);
+  background: rgba(0, 0, 0, 0.35);
+  padding: 0.1rem 0.35rem;
+  border-radius: 0.25rem;
+}
+
+.conn-btn {
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.9);
+  border-radius: 0.55rem;
+  padding: 0.7rem 0.9rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+
+.conn-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.conn-btn-primary {
+  border-color: rgba(245, 224, 0, 0.55);
+  background: rgba(245, 224, 0, 0.14);
+  color: var(--paint);
+}
+
+.conn-btn-primary:hover:not(:disabled) {
+  background: rgba(245, 224, 0, 0.22);
+}
+
+.conn-btn-danger {
+  border-color: rgba(255, 120, 100, 0.4);
+  color: rgba(255, 180, 170, 0.95);
+}
+
+.conn-btn-danger:hover:not(:disabled) {
+  background: rgba(255, 80, 60, 0.12);
+}
+
+.conn-howto {
+  margin: 0.15rem 0 0;
+  padding: 0.55rem 0.65rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 0.55rem;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.conn-howto summary {
+  cursor: pointer;
+  font-size: 0.75rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.55);
+  list-style: none;
+}
+
+.conn-howto summary::-webkit-details-marker {
+  display: none;
+}
+
+.conn-howto[open] summary {
+  margin-bottom: 0.45rem;
+  color: rgba(255, 255, 255, 0.75);
+}
+
+.conn-howto .conn-steps {
+  margin-top: 0.25rem;
+}
+
+.conn-label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-size: 0.65rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.42);
+}
+
+.conn-input {
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 0.5rem;
+  background: rgba(0, 0, 0, 0.4);
+  color: #fff;
+  padding: 0.65rem 0.75rem;
+  font-size: 0.9rem;
+  outline: none;
+}
+
+.conn-input:focus {
+  border-color: rgba(245, 224, 0, 0.55);
+}
+
+.conn-mono,
+.conn-status {
+  margin: 0;
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  font-size: 0.72rem;
+  color: rgba(255, 255, 255, 0.45);
+}
+
+.conn-status {
+  color: #9be89a;
+}
+
+.conn-error {
+  margin: 0.85rem 0 0;
+  font-size: 0.75rem;
+  line-height: 1.4;
+  color: #f5a8b0;
+}
+
+.conn-pulse {
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 999px;
+  border: 2px solid rgba(245, 224, 0, 0.35);
+  border-top-color: var(--paint);
+  animation: conn-spin 0.85s linear infinite;
+}
+
+@keyframes conn-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .glass-pedal {
   border: 1px solid rgba(255, 255, 255, 0.22);
   backdrop-filter: blur(14px) saturate(1.25);

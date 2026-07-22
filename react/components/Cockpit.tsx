@@ -3,28 +3,15 @@
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { AnalogCluster } from "@/components/AnalogCluster";
 import { CameraView } from "@/components/CameraView";
-import { LinkSettingsModal } from "@/components/LinkSettingsModal";
+import { ConnectionModal } from "@/components/ConnectionModal";
 import { MotorPanel } from "@/components/MotorPanel";
 import { SteeringWheel } from "@/components/SteeringWheel";
-import { useBleProvision } from "@/hooks/useBleProvision";
+import { useCarConnection } from "@/hooks/useCarConnection";
 import { useCarSocket } from "@/hooks/useCarSocket";
-import {
-  MOTOR_MAX,
-  SERVO_CENTER,
-  clearStoredWifiCreds,
-  loadPreferBle,
-  loadStoredWifiCreds,
-  savePreferBle,
-  saveStoredWifiCreds,
-  saveStoredWsUrl,
-  wheelDegToServo,
-} from "@/lib/protocol";
+import { MOTOR_MAX, SERVO_CENTER, wheelDegToServo } from "@/lib/protocol";
 
 export function Cockpit() {
-  const ble = useBleProvision();
-  const [wsUrl, setWsUrl] = useState("");
-  const [debug, setDebug] = useState(false);
-  const [preferBle, setPreferBle] = useState(true);
+  const conn = useCarConnection();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [wheelDeg, setWheelDeg] = useState(0);
   const [servoAngle, setServoAngle] = useState(SERVO_CENTER);
@@ -37,103 +24,47 @@ export function Cockpit() {
   const [charging, setCharging] = useState(false);
   const [chargeFull, setChargeFull] = useState(false);
   const animRef = useRef<number | null>(null);
-  const [storedWifi, setStoredWifi] = useState<{
-    ssid: string;
-    password: string;
-  } | null>(null);
 
+  const ready = conn.phase === "ready";
+
+  // Auto-open when we need the user; auto-close once linked
   useEffect(() => {
-    setPreferBle(loadPreferBle());
-    setStoredWifi(loadStoredWifiCreds());
-  }, []);
-
-  const wifiReady = ble.wifiStatus?.wifi === "connected";
-  const bleReady = ble.bleState === "connected";
-  const derivedWs =
-    ble.wifiStatus?.ws ||
-    (ble.wifiStatus?.ip ? `ws://${ble.wifiStatus.ip}:81` : "");
-  const streamUrl =
-    ble.wifiStatus?.stream ||
-    (ble.wifiStatus?.ip ? `http://${ble.wifiStatus.ip}/stream` : null);
-
-  const onWifiReady = useEffectEvent((url: string) => {
-    saveStoredWsUrl(url);
-    setWsUrl(url);
-  });
-
-  useEffect(() => {
-    if (wifiReady && derivedWs && derivedWs !== wsUrl) {
-      onWifiReady(derivedWs);
+    if (conn.phase === "ready") {
+      setSettingsOpen(false);
+      return;
     }
-  }, [wifiReady, derivedWs, wsUrl]);
+    if (conn.phase !== "idle") {
+      setSettingsOpen(true);
+    }
+  }, [conn.phase]);
 
   const {
     state: wsState,
     lastAck,
-    sendSteer: sendSteerWs,
-    sendCenter: sendCenterWs,
+    sendSteer,
+    sendCenter,
     sendDrive: sendDriveWs,
     sendStop: sendStopWs,
     sendLights: sendLightsWs,
   } = useCarSocket({
-    url: wsUrl || "ws://0.0.0.0:81",
-    enabled: Boolean(wsUrl) && wifiReady,
+    url: conn.wsUrl || "ws://0.0.0.0:81",
+    enabled: ready && Boolean(conn.wsUrl),
+    onTelemetry: (msg) => {
+      if (typeof msg.batt === "number") {
+        setBatteryPct(Math.max(0, Math.min(100, Math.round(msg.batt))));
+      }
+      if (typeof msg.usb === "boolean") setUsbPower(msg.usb);
+      if (typeof msg.charging === "boolean") setCharging(msg.charging);
+      if (typeof msg.full === "boolean") setChargeFull(msg.full);
+    },
   });
 
-  const wsReady = wifiReady && wsState === "open";
-
-  // preferBle ON  → BLE control (no WiFi needed; WiFi optional for camera)
-  // preferBle OFF → WiFi WebSocket when linked, else BLE
-  const transport: "wifi" | "ble" | "none" = preferBle
-    ? bleReady
-      ? "ble"
-      : wsReady
-        ? "wifi"
-        : "none"
-    : wsReady
-      ? "wifi"
-      : bleReady
-        ? "ble"
-        : "none";
-
-  const canDrive = transport !== "none";
-
-  const onPreferBleChange = (value: boolean) => {
-    setPreferBle(value);
-    savePreferBle(value);
-  };
-
-  const provisionWifi = async (ssid: string, password: string) => {
-    await ble.provisionWifi(ssid, password);
-    saveStoredWifiCreds(ssid, password);
-    setStoredWifi({ ssid, password });
-  };
-
-  const disconnectWifi = async () => {
-    await ble.disconnectWifi();
-  };
-
-  const forgetWifi = async () => {
-    await ble.forgetWifi();
-    clearStoredWifiCreds();
-    setStoredWifi(null);
-  };
-
-  const sendSteer = (angle: number) => {
-    if (transport === "wifi") sendSteerWs(angle);
-    else if (transport === "ble") ble.sendSteerBle(angle);
-  };
-
-  const sendCenter = () => {
-    if (transport === "wifi") sendCenterWs();
-    else if (transport === "ble") ble.sendCenterBle();
-  };
+  const canDrive = ready && wsState === "open";
 
   const sendDrive = (l: number, r: number) => {
     setLeft(l);
     setRight(r);
-    if (transport === "wifi") sendDriveWs(l, r);
-    else if (transport === "ble") ble.sendDriveBle(l, r);
+    if (canDrive) sendDriveWs(l, r);
   };
 
   const sendStop = () => {
@@ -141,15 +72,13 @@ export function Cockpit() {
     setRight(0);
     setWheelDeg(0);
     setServoAngle(SERVO_CENTER);
-    if (transport === "wifi") sendStopWs();
-    else if (transport === "ble") ble.sendStopBle();
+    if (canDrive) sendStopWs();
   };
 
   const toggleLights = () => {
     const next = !lightsOn;
     setLightsOn(next);
-    if (transport === "wifi") sendLightsWs(next);
-    else if (transport === "ble") ble.sendLightsBle(next);
+    if (canDrive) sendLightsWs(next);
   };
 
   const applyWheel = (deg: number) => {
@@ -160,7 +89,7 @@ export function Cockpit() {
     setWheelDeg(deg);
     const angle = wheelDegToServo(deg);
     setServoAngle(angle);
-    sendSteer(angle);
+    if (canDrive) sendSteer(angle);
   };
 
   const autoCenter = () => {
@@ -176,14 +105,14 @@ export function Cockpit() {
       setWheelDeg(deg);
       const angle = wheelDegToServo(deg);
       setServoAngle(angle);
-      sendSteer(angle);
+      if (canDrive) sendSteer(angle);
       if (t < 1) {
         animRef.current = requestAnimationFrame(tick);
       } else {
         animRef.current = null;
         setWheelDeg(0);
         setServoAngle(SERVO_CENTER);
-        sendCenter();
+        if (canDrive) sendCenter();
       }
     };
     animRef.current = requestAnimationFrame(tick);
@@ -211,30 +140,6 @@ export function Cockpit() {
     };
   }, [halt]);
 
-  useEffect(() => {
-    const b = ble.wifiStatus?.batt;
-    if (typeof b === "number" && Number.isFinite(b)) {
-      setBatteryPct(Math.max(0, Math.min(100, Math.round(b))));
-    }
-    if (typeof ble.wifiStatus?.usb === "boolean") {
-      setUsbPower(ble.wifiStatus.usb);
-    } else if (typeof ble.wifiStatus?.charging === "boolean") {
-      // older firmware: charging meant "on charger"
-      setUsbPower(ble.wifiStatus.charging);
-    }
-    if (typeof ble.wifiStatus?.charging === "boolean") {
-      setCharging(ble.wifiStatus.charging);
-    }
-    if (typeof ble.wifiStatus?.full === "boolean") {
-      setChargeFull(ble.wifiStatus.full);
-    }
-  }, [
-    ble.wifiStatus?.batt,
-    ble.wifiStatus?.usb,
-    ble.wifiStatus?.charging,
-    ble.wifiStatus?.full,
-  ]);
-
   const speedKmh = Math.round(
     (Math.max(Math.abs(left), Math.abs(right)) / MOTOR_MAX) * 330,
   );
@@ -242,15 +147,6 @@ export function Cockpit() {
     Math.round(
       (Math.max(Math.abs(left), Math.abs(right)) / MOTOR_MAX) * 7.5 * 10,
     ) / 10;
-
-  const linkState =
-    transport === "wifi"
-      ? wsState
-      : transport === "ble"
-        ? "open"
-        : ble.bleState === "connecting"
-          ? "connecting"
-          : "idle";
 
   return (
     <div className="cockpit cockpit-graph relative flex h-dvh max-h-dvh flex-col overflow-hidden text-white">
@@ -269,42 +165,37 @@ export function Cockpit() {
         </div>
       </header>
 
-      <LinkSettingsModal
+      <ConnectionModal
         open={settingsOpen}
         onClose={() => setSettingsOpen(false)}
-        mounted={ble.mounted}
-        supported={ble.supported}
-        bleState={ble.bleState}
-        error={ble.error}
-        controlError={ble.controlError}
-        wifiStatus={ble.wifiStatus}
-        networks={ble.networks}
-        transport={transport}
-        preferBle={preferBle}
-        onPreferBleChange={onPreferBleChange}
-        debug={debug}
-        onDebugChange={setDebug}
-        onConnectBle={() => void ble.connect()}
-        onScanWifi={ble.scanWifi}
-        onProvisionWifi={provisionWifi}
-        onDisconnectWifi={disconnectWifi}
-        onForgetWifi={forgetWifi}
-        initialSsid={storedWifi?.ssid ?? ""}
-        initialPassword={storedWifi?.password ?? ""}
+        phase={conn.phase}
+        linkPath={conn.linkPath}
+        message={conn.message}
+        error={conn.error}
+        homeSsid={conn.homeSsid}
+        setupApSsid={conn.setupApSsid}
+        directApSsid={conn.directApSsid}
+        espIp={conn.espIp}
+        onRetry={() => void conn.probe()}
+        onRetryDirect={() => void conn.probeDirect()}
+        onOpenSetup={conn.openSetup}
+        onSubmitWifi={conn.submitWifi}
+        onDisconnect={conn.disconnect}
+        onDisconnectCarHome={conn.disconnectCarHome}
+        onForgetCarHome={conn.forgetCarHome}
+        initialSsid={conn.homeSsid}
       />
 
       <main className="cockpit-layout relative z-10 grid min-h-0 flex-1 gap-0 p-0">
         <section className="cockpit-windscreen flex min-h-0 items-stretch justify-center">
           <CameraView
-            streamUrl={streamUrl}
-            wifiReady={wifiReady}
-            debug={debug}
+            streamUrl={conn.streamUrl}
+            wifiReady={ready}
             left={left}
             right={right}
             wheelDeg={wheelDeg}
-            linkState={linkState}
-            transport={transport}
-            wifiLabel={wifiReady ? ble.wifiStatus?.ws : undefined}
+            linkState={wsState}
+            wifiLabel={conn.linkLabel || conn.wsUrl || undefined}
             lastAck={lastAck}
             onOpenLink={() => setSettingsOpen(true)}
           />

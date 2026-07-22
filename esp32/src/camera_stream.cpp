@@ -1,7 +1,6 @@
 #include "camera_stream.h"
 #include "config.h"
 
-#include <WebServer.h>
 #include <WiFi.h>
 #include <esp_camera.h>
 
@@ -23,44 +22,35 @@
 #define HREF_GPIO_NUM 47
 #define PCLK_GPIO_NUM 13
 
-static WebServer camServer(CAMERA_HTTP_PORT);
+static WebServer *gHttp = nullptr;
 
 static void sendCors() {
-  camServer.sendHeader("Access-Control-Allow-Origin", "*");
-  camServer.sendHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
-  camServer.sendHeader("Access-Control-Allow-Headers", "*");
+  if (!gHttp) return;
+  gHttp->sendHeader("Access-Control-Allow-Origin", "*");
+  gHttp->sendHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
+  gHttp->sendHeader("Access-Control-Allow-Headers", "*");
 }
 
-static void handleOptions() {
-  sendCors();
-  camServer.send(204);
-}
-
-static void handleRoot() {
-  sendCors();
-  camServer.send(200, "text/plain", "RC-Car cam OK — /jpg or /stream");
-}
-
-/** Single JPEG — reliable for phone browsers (polled by UI). */
 static void handleJpg() {
+  if (!gHttp) return;
   camera_fb_t *fb = esp_camera_fb_get();
   if (!fb) {
     sendCors();
-    camServer.send(503, "text/plain", "capture_fail");
+    gHttp->send(503, "text/plain", "capture_fail");
     return;
   }
   sendCors();
-  camServer.sendHeader("Cache-Control", "no-store, no-cache, must-revalidate");
-  camServer.setContentLength(fb->len);
-  camServer.send(200, "image/jpeg", "");
-  WiFiClient client = camServer.client();
+  gHttp->sendHeader("Cache-Control", "no-store, no-cache, must-revalidate");
+  gHttp->setContentLength(fb->len);
+  gHttp->send(200, "image/jpeg", "");
+  WiFiClient client = gHttp->client();
   client.write(fb->buf, fb->len);
   esp_camera_fb_return(fb);
 }
 
-/** MJPEG multipart (desktop Chrome usually OK). */
 static void handleStream() {
-  WiFiClient client = camServer.client();
+  if (!gHttp) return;
+  WiFiClient client = gHttp->client();
   client.println("HTTP/1.1 200 OK");
   client.println("Access-Control-Allow-Origin: *");
   client.println("Content-Type: multipart/x-mixed-replace; boundary=frame");
@@ -87,7 +77,6 @@ static void handleStream() {
 
     if (wrote == 0) break;
 
-    // ~8–10 fps max so BLE/WiFi stay responsive
     uint32_t now = millis();
     if (now - lastMs < 100) delay(100 - (now - lastMs));
     lastMs = millis();
@@ -98,7 +87,6 @@ static void handleStream() {
 bool CameraStream::begin() {
   if (_ready) return true;
 
-  // IMPORTANT: zero-init — garbage fields crash / fail init on S3
   camera_config_t config = {};
   config.ledc_channel = LEDC_CHANNEL_0;
   config.ledc_timer = LEDC_TIMER_0;
@@ -159,7 +147,6 @@ bool CameraStream::begin() {
     s->set_framesize(s, config.frame_size);
   }
 
-  // Warm-up frames
   for (int i = 0; i < 3; i++) {
     camera_fb_t *fb = esp_camera_fb_get();
     if (fb) esp_camera_fb_return(fb);
@@ -171,28 +158,16 @@ bool CameraStream::begin() {
   return true;
 }
 
-void CameraStream::startServer() {
-  if (!_ready) {
-    if (!begin()) return;
-  }
-  if (_serverRunning) return;
-  if (WiFi.status() != WL_CONNECTED) {
-    Serial.println("[cam] server wait — no WiFi yet");
-    return;
-  }
-
-  camServer.on("/", HTTP_GET, handleRoot);
-  camServer.on("/jpg", HTTP_GET, handleJpg);
-  camServer.on("/stream", HTTP_GET, handleStream);
-  camServer.on("/", HTTP_OPTIONS, handleOptions);
-  camServer.on("/jpg", HTTP_OPTIONS, handleOptions);
-  camServer.on("/stream", HTTP_OPTIONS, handleOptions);
-  camServer.begin();
-  _serverRunning = true;
-  Serial.printf("[cam] http://%s/jpg  and  /stream\n",
-                WiFi.localIP().toString().c_str());
+void CameraStream::attachRoutes(WebServer &server) {
+  if (_routesAttached) return;
+  if (!_ready) begin();
+  gHttp = &server;
+  server.on("/jpg", HTTP_GET, handleJpg);
+  server.on("/stream", HTTP_GET, handleStream);
+  _routesAttached = true;
+  Serial.println("[cam] routes /jpg /stream attached");
 }
 
 void CameraStream::loop() {
-  if (_serverRunning) camServer.handleClient();
+  // HTTP clients handled by SetupServer
 }

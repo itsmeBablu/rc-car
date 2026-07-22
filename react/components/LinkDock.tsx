@@ -4,27 +4,21 @@ import type { ConnectionState } from "@/hooks/useCarSocket";
 
 type Props = {
   state: ConnectionState;
-  transport: "wifi" | "ble" | "none";
   wifiLabel?: string;
   live?: boolean;
   onOpenLink: () => void;
 };
 
-export function LinkDock({ state, transport, wifiLabel, live = false, onOpenLink }: Props) {
+export function LinkDock({ state, wifiLabel, live = false, onOpenLink }: Props) {
   const linked = state === "open";
-  const sub =
-    transport === "wifi"
-      ? wifiLabel?.replace(/^ws:\/\//, "") || "WiFi"
-      : transport === "ble"
-        ? "Bluetooth"
-        : "Not linked";
+  const sub = wifiLabel?.replace(/^ws:\/\//, "") || "WiFi";
 
   return (
     <button
       type="button"
       onClick={onOpenLink}
       className="live-link glass-pill group flex w-full items-center gap-2 px-2.5 py-1.5 text-left"
-      aria-label="Open link settings"
+      aria-label="Open connection settings"
     >
       <span className={`live-beacon compact ${live ? "is-live" : ""}`} aria-hidden={!live}>
         <span className="live-wave" />
