@@ -123,13 +123,42 @@ export function useBleProvision() {
           setNetworks(s.networks.filter((n) => n.ssid));
         }
         setWifiStatus((prev) => {
+          // Battery-only notify: keep wifi fields, merge batt/usb/charging
+          if (s.batt != null && s.wifi == null) {
+            return {
+              ...(prev ?? {}),
+              batt: s.batt,
+              usb: s.usb,
+              charging: s.charging,
+              full: s.full,
+              mv: s.mv,
+            };
+          }
           if (
             prev?.wifi === "connecting" &&
             (s.wifi === "disconnected" || s.wifi === "scanning")
           ) {
-            return { ...s, wifi: "connecting", ssid: prev.ssid ?? s.ssid };
+            return {
+              ...prev,
+              ...s,
+              wifi: "connecting",
+              ssid: prev.ssid ?? s.ssid,
+              batt: s.batt ?? prev.batt,
+              usb: s.usb ?? prev.usb,
+              charging: s.charging ?? prev.charging,
+              full: s.full ?? prev.full,
+              mv: s.mv ?? prev.mv,
+            };
           }
-          return s;
+          return {
+            ...prev,
+            ...s,
+            batt: s.batt ?? prev?.batt,
+            usb: s.usb ?? prev?.usb,
+            charging: s.charging ?? prev?.charging,
+            full: s.full ?? prev?.full,
+            mv: s.mv ?? prev?.mv,
+          };
         });
       });
 

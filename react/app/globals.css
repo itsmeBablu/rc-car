@@ -470,6 +470,104 @@ body {
   fill: rgba(12, 14, 18, 0.1);
 }
 
+.pc-face-low {
+  fill: rgba(180, 40, 50, 0.42);
+}
+
+.pc-face-crit {
+  fill: rgba(120, 8, 18, 0.72);
+  animation: pc-batt-crit-blink 0.85s ease-in-out infinite;
+}
+
+.pc-face-charging {
+  fill: rgba(20, 120, 70, 0.42);
+  animation: pc-batt-chg-soft 1.4s ease-in-out infinite;
+}
+
+.pc-face-charge-full {
+  fill: rgba(8, 110, 55, 0.72);
+  animation: pc-batt-full-blink 0.9s ease-in-out infinite;
+}
+
+@keyframes pc-batt-crit-blink {
+  0%,
+  100% {
+    fill: rgba(90, 4, 12, 0.85);
+  }
+  50% {
+    fill: rgba(200, 20, 40, 0.75);
+  }
+}
+
+@keyframes pc-batt-chg-soft {
+  0%,
+  100% {
+    fill: rgba(16, 100, 60, 0.38);
+  }
+  50% {
+    fill: rgba(36, 180, 100, 0.55);
+  }
+}
+
+@keyframes pc-batt-full-blink {
+  0%,
+  100% {
+    fill: rgba(4, 90, 45, 0.88);
+  }
+  50% {
+    fill: rgba(40, 220, 120, 0.78);
+  }
+}
+
+.pc-tick-label-fuel {
+  font-size: 4.2px;
+  fill: rgba(255, 255, 255, 0.55);
+}
+
+.pc-fuel-digital {
+  fill: #ecfdf5;
+  font-family: var(--font-display), sans-serif;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.pc-fuel-chg-tag {
+  position: absolute;
+  left: 50%;
+  bottom: 0.15rem;
+  transform: translateX(-50%);
+  font-family: var(--font-display), sans-serif;
+  font-size: 0.42rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  color: #6ee7b7;
+  text-shadow: 0 0 8px rgba(52, 211, 153, 0.55);
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.pc-fuel-chg-tag.is-charging {
+  color: #a7f3d0;
+  letter-spacing: 0.1em;
+}
+
+.pc-fuel-chg-tag.is-full {
+  color: #34d399;
+  letter-spacing: 0.16em;
+}
+
+.pc-batt-fill.is-charging {
+  background: linear-gradient(90deg, #34d399, #a7f3d0);
+}
+
+.pc-batt-fill.is-charge-full {
+  background: linear-gradient(90deg, #059669, #6ee7b7);
+}
+
+.pc-batt-fill.is-low {
+  background: linear-gradient(90deg, #fb7185, #fda4af);
+}
 .pc-tick {
   stroke: rgba(255, 255, 255, 0.55);
   stroke-width: 1.4;

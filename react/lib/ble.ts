@@ -20,6 +20,15 @@ export type WifiStatus = {
   networks?: WifiNetwork[];
   attempt?: number;
   reason?: number;
+  /** Live 1S pack % from ESP ADC */
+  batt?: number;
+  /** USB plugged into TC4056 (CHRG or STDBY active) */
+  usb?: boolean;
+  /** Still charging (TP4056 CHRG low) */
+  charging?: boolean;
+  /** Charge complete, USB still in (TP4056 STDBY low) */
+  full?: boolean;
+  mv?: number;
 };
 
 export function isWebBluetoothAvailable(): boolean {

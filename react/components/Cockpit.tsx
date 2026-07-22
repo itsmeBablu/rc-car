@@ -32,7 +32,10 @@ export function Cockpit() {
   const [right, setRight] = useState(0);
   const [lightsOn, setLightsOn] = useState(false);
   const [gear, setGear] = useState<"D" | "R">("D");
-  const [batteryPct, setBatteryPct] = useState(92);
+  const [batteryPct, setBatteryPct] = useState(100);
+  const [usbPower, setUsbPower] = useState(false);
+  const [charging, setCharging] = useState(false);
+  const [chargeFull, setChargeFull] = useState(false);
   const animRef = useRef<number | null>(null);
   const [storedWifi, setStoredWifi] = useState<{
     ssid: string;
@@ -209,13 +212,28 @@ export function Cockpit() {
   }, [halt]);
 
   useEffect(() => {
-    const moving = Math.abs(left) > 20 || Math.abs(right) > 20;
-    if (!moving) return;
-    const id = setInterval(() => {
-      setBatteryPct((b) => Math.max(5, b - 0.15));
-    }, 2000);
-    return () => clearInterval(id);
-  }, [left, right]);
+    const b = ble.wifiStatus?.batt;
+    if (typeof b === "number" && Number.isFinite(b)) {
+      setBatteryPct(Math.max(0, Math.min(100, Math.round(b))));
+    }
+    if (typeof ble.wifiStatus?.usb === "boolean") {
+      setUsbPower(ble.wifiStatus.usb);
+    } else if (typeof ble.wifiStatus?.charging === "boolean") {
+      // older firmware: charging meant "on charger"
+      setUsbPower(ble.wifiStatus.charging);
+    }
+    if (typeof ble.wifiStatus?.charging === "boolean") {
+      setCharging(ble.wifiStatus.charging);
+    }
+    if (typeof ble.wifiStatus?.full === "boolean") {
+      setChargeFull(ble.wifiStatus.full);
+    }
+  }, [
+    ble.wifiStatus?.batt,
+    ble.wifiStatus?.usb,
+    ble.wifiStatus?.charging,
+    ble.wifiStatus?.full,
+  ]);
 
   const speedKmh = Math.round(
     (Math.max(Math.abs(left), Math.abs(right)) / MOTOR_MAX) * 330,
@@ -327,7 +345,14 @@ export function Cockpit() {
           </div>
 
           <div className="cockpit-analog">
-            <AnalogCluster speed={speedKmh} rpm={rpm} fuel={batteryPct} />
+            <AnalogCluster
+              speed={speedKmh}
+              rpm={rpm}
+              fuel={batteryPct}
+              usb={usbPower}
+              charging={charging}
+              full={chargeFull}
+            />
           </div>
 
           <div className="cockpit-pedals">
