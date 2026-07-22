@@ -86,7 +86,16 @@ void SetupServer::handleRoot() {
   html += F("<h1>RC CAR ONLINE</h1>");
   html += F("<p>SoftAP <code>");
   html += apName;
-  html += F("</code> · open your GT2 RS app on this Wi‑Fi, then Link → Direct.</p>");
+  html += F("</code></p>");
+  if (_wifi && _wifi->isStaConnected()) {
+    html += F("<p><strong>Home LAN IP</strong> <code>");
+    html += WiFi.localIP().toString();
+    html += F("</code> — on iPhone, open this address in Safari while on your "
+              "home Wi‑Fi (HTTPS App Store / Vercel apps cannot talk to the car).</p>");
+  }
+  html += F("<p>iPhone tip: the GT2 RS app on <em>https://</em> cannot reach "
+            "<code>http://</code> car IPs. Use Safari to open this page "
+            "(SoftAP) or your Home LAN IP above, or use Direct hotspot + this page.</p>");
   html += F("<pre id=s>");
   html += json;
   html += F("</pre>");
@@ -181,6 +190,50 @@ void SetupServer::handleCaptive() {
   _http.send(302, "text/plain", "Redirect");
 }
 
+void SetupServer::handleVideoGet() {
+  sendCors();
+  if (!_camera) {
+    _http.send(503, "application/json", "{\"ok\":false,\"error\":\"no_camera\"}");
+    return;
+  }
+  _http.send(200, "application/json", _camera->statusJson());
+}
+
+void SetupServer::handleVideoPost() {
+  sendCors();
+  if (!_camera) {
+    _http.send(503, "application/json", "{\"ok\":false,\"error\":\"no_camera\"}");
+    return;
+  }
+
+  String raw = _postBody;
+  if (raw.length() == 0 && _http.hasArg("plain")) raw = _http.arg("plain");
+
+  JsonDocument doc;
+  if (deserializeJson(doc, raw)) {
+    if (_http.hasArg("quality")) {
+      doc.clear();
+      doc["quality"] = _http.arg("quality");
+    } else {
+      _http.send(400, "application/json",
+                 "{\"ok\":false,\"error\":\"bad_json\"}");
+      return;
+    }
+  }
+
+  const String q = doc["quality"] | "";
+  VideoQuality vq;
+  if (!CameraStream::parseQuality(q, vq)) {
+    _http.send(400, "application/json",
+               "{\"ok\":false,\"error\":\"quality_auto_low_medium_high\"}");
+    return;
+  }
+
+  _camera->setQuality(vq);
+  Serial.printf("[http] video quality → %s\n", CameraStream::qualityName(vq));
+  _http.send(200, "application/json", _camera->statusJson());
+}
+
 void SetupServer::registerRoutes() {
   if (_routesRegistered) return;
   _routesRegistered = true;
@@ -189,15 +242,28 @@ void SetupServer::registerRoutes() {
   _http.on("/api/status", HTTP_OPTIONS, [this]() { handleOptions(); });
   _http.on("/api/wifi", HTTP_OPTIONS, [this]() { handleOptions(); });
   _http.on("/api/battery", HTTP_OPTIONS, [this]() { handleOptions(); });
+  _http.on("/api/video", HTTP_OPTIONS, [this]() { handleOptions(); });
   _http.on("/jpg", HTTP_OPTIONS, [this]() { handleOptions(); });
   _http.on("/stream", HTTP_OPTIONS, [this]() { handleOptions(); });
 
   _http.on("/", HTTP_GET, [this]() { handleRoot(); });
   _http.on("/api/status", HTTP_GET, [this]() { handleStatus(); });
   _http.on("/api/battery", HTTP_GET, [this]() { handleBattery(); });
+  _http.on("/api/video", HTTP_GET, [this]() { handleVideoGet(); });
   _http.on(
       "/api/wifi", HTTP_POST,
       [this]() { handleWifiPost(); },
+      [this]() {
+        HTTPUpload &up = _http.upload();
+        if (up.status == UPLOAD_FILE_START) {
+          _postBody = "";
+        } else if (up.status == UPLOAD_FILE_WRITE) {
+          _postBody += String((const char *)up.buf, up.currentSize);
+        }
+      });
+  _http.on(
+      "/api/video", HTTP_POST,
+      [this]() { handleVideoPost(); },
       [this]() {
         HTTPUpload &up = _http.upload();
         if (up.status == UPLOAD_FILE_START) {

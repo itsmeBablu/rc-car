@@ -6,6 +6,8 @@ import {
   DEFAULT_WS_URL,
   driveMessage,
   lightsMessage,
+  modeMessage,
+  pingMessage,
   steerMessage,
   stopMessage,
 } from "@/lib/protocol";
@@ -70,6 +72,10 @@ export function useCarSocket(options: Options = {}) {
     return sendRaw(lightsMessage(on));
   });
 
+  const sendMode = useEffectEvent((mode: "NORMAL" | "SPORT" | "CRAWL") => {
+    return sendRaw(modeMessage(mode));
+  });
+
   const connect = useEffectEvent(() => {
     clearRetry();
     if (wsRef.current) {
@@ -101,6 +107,9 @@ export function useCarSocket(options: Options = {}) {
       try {
         const msg = JSON.parse(text) as Record<string, unknown>;
         if (msg.batt != null || msg.charging != null || msg.usb != null) {
+          onTelemetry?.(msg);
+        }
+        if (typeof msg.mode === "string") {
           onTelemetry?.(msg);
         }
       } catch {
@@ -138,5 +147,14 @@ export function useCarSocket(options: Options = {}) {
     };
   }, [enabled, url]);
 
-  return { state, lastAck, sendSteer, sendCenter, sendDrive, sendStop, sendLights };
+  // Keep WS + ESP watchdog alive while holding steady throttle/steer
+  useEffect(() => {
+    if (state !== "open") return;
+    const id = setInterval(() => {
+      sendRaw(pingMessage());
+    }, 400);
+    return () => clearInterval(id);
+  }, [state]);
+
+  return { state, lastAck, sendSteer, sendCenter, sendDrive, sendStop, sendLights, sendMode };
 }

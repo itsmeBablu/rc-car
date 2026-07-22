@@ -80,7 +80,10 @@ private:
   uint32_t _phaseStartedMs = 0;
   uint32_t _attemptStartedMs = 0;
   uint32_t _apHoldUntilMs = 0;
+  uint32_t _deferStaUntilMs = 0; // SoftAP-first: delay home Wi‑Fi try
+  uint32_t _softApUpMs = 0;
   uint8_t _connectAttempt = 0;
+  uint8_t _apChannel = 6;
   String _ssid;
   String _pass;
   String _message;
@@ -96,4 +99,6 @@ private:
   void enterDirect(const char *reason);
   void startSoftAp(const char *ssid, const char *pass, bool apSta);
   void ensureSoftAp(bool apSta);
+  void beginDeferredStaTry();
+  bool softApHealthy() const;
 };

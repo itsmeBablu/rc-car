@@ -14,6 +14,8 @@ public:
 
   void begin(StatusFn onStatus = nullptr);
   void loop();
+  /** Sample / emit cadence (eco vs performance). */
+  void setIntervals(uint32_t sampleMs, uint32_t minEmitMs);
 
   int percent() const { return _percent; }
   bool usb() const { return _usb; }
@@ -38,6 +40,8 @@ private:
   bool _lastEmittedFull = false;
   uint32_t _lastSampleMs = 0;
   uint32_t _lastEmitMs = 0;
+  uint32_t _sampleMs = 200;
+  uint32_t _minEmitMs = 400;
   float _filtMv = 0;
   bool _filtReady = false;
 };

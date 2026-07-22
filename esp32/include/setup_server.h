@@ -37,5 +37,7 @@ private:
   void handleStatus();
   void handleBattery();
   void handleWifiPost();
+  void handleVideoGet();
+  void handleVideoPost();
   void handleCaptive();
 };

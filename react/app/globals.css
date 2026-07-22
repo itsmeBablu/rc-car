@@ -134,12 +134,215 @@ body {
   padding: 0;
   line-height: 0;
   max-width: calc(100% - (0.4rem + min(37.12dvh, 213px) + 4.1rem) - 6.5rem);
+  display: flex;
+  flex-direction: row;
+  align-items: flex-end;
+  gap: 0.55rem;
 }
 
 .cockpit-analog > * {
   pointer-events: auto;
+  line-height: normal;
 }
 
+/* —— Drive mode dial (briefcase PIN / cylinder) —— */
+.drive-odo {
+  --dm-item-h: 32px;
+  --dm-peek: 0.1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 7.1rem;
+  width: 7.1rem;
+  padding: 0.28rem 0.35rem;
+  border-radius: 0.75rem;
+  border: 1px solid rgba(245, 224, 0, 0.28);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.07) 0%, transparent 42%),
+    rgba(8, 9, 12, 0.9);
+  backdrop-filter: blur(8px);
+  box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.35);
+  user-select: none;
+  touch-action: none;
+  transition: border-color 0.2s ease;
+}
+
+.drive-odo.is-sport {
+  border-color: rgba(255, 90, 70, 0.4);
+}
+
+.drive-odo.is-crawl {
+  border-color: rgba(90, 200, 140, 0.4);
+}
+
+.drive-odo.is-disabled {
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+.drive-odo-window {
+  position: relative;
+  width: 100%;
+  height: calc(var(--dm-item-h) * (1 + var(--dm-peek) * 2));
+  overflow: hidden;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background:
+    radial-gradient(120% 80% at 50% 50%, #15171c 0%, #08090c 100%);
+  cursor: grab;
+  outline: none;
+  box-shadow:
+    inset 0 5px 8px rgba(0, 0, 0, 0.45),
+    inset 0 -5px 8px rgba(0, 0, 0, 0.45),
+    0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.drive-odo-window:active {
+  cursor: grabbing;
+}
+
+.drive-odo-window:focus-visible {
+  box-shadow:
+    inset 0 5px 8px rgba(0, 0, 0, 0.45),
+    0 0 0 2px rgba(245, 224, 0, 0.35);
+}
+
+.drive-odo-rim {
+  pointer-events: none;
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 22%;
+  z-index: 4;
+}
+
+.drive-odo-rim-l {
+  left: 0;
+  background: linear-gradient(90deg, rgba(0, 0, 0, 0.5) 0%, transparent 100%);
+}
+
+.drive-odo-rim-r {
+  right: 0;
+  background: linear-gradient(270deg, rgba(0, 0, 0, 0.5) 0%, transparent 100%);
+}
+
+.drive-odo-mask {
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  background: linear-gradient(
+    180deg,
+    rgba(6, 7, 10, 0.92) 0%,
+    rgba(6, 7, 10, 0.55) calc(var(--dm-peek) * 100% / (1 + var(--dm-peek) * 2)),
+    transparent calc(var(--dm-peek) * 100% / (1 + var(--dm-peek) * 2) + 2%),
+    transparent calc(100% - var(--dm-peek) * 100% / (1 + var(--dm-peek) * 2) - 2%),
+    rgba(6, 7, 10, 0.55) calc(100% - var(--dm-peek) * 100% / (1 + var(--dm-peek) * 2)),
+    rgba(6, 7, 10, 0.92) 100%
+  );
+}
+
+.drive-odo-glass {
+  pointer-events: none;
+  position: absolute;
+  left: 5%;
+  right: 5%;
+  top: calc(var(--dm-item-h) * var(--dm-peek));
+  height: var(--dm-item-h);
+  z-index: 3;
+  border-radius: 999px;
+  border-top: 1px solid rgba(245, 224, 0, 0.4);
+  border-bottom: 1px solid rgba(245, 224, 0, 0.4);
+  box-shadow:
+    inset 0 0 12px rgba(245, 224, 0, 0.07),
+    0 0 0 1px rgba(0, 0, 0, 0.25);
+}
+
+.drive-odo.is-sport .drive-odo-glass {
+  border-color: rgba(255, 100, 80, 0.5);
+  box-shadow: inset 0 0 12px rgba(255, 80, 50, 0.1);
+}
+
+.drive-odo.is-crawl .drive-odo-glass {
+  border-color: rgba(110, 210, 150, 0.45);
+  box-shadow: inset 0 0 12px rgba(80, 200, 130, 0.1);
+}
+
+.drive-odo-drum {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(var(--dm-item-h) * var(--dm-peek));
+  z-index: 1;
+  transition: transform 0.32s cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: transform;
+}
+
+.drive-odo-drum.is-dragging {
+  transition: none;
+}
+
+.drive-odo-item {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  height: var(--dm-item-h);
+  padding: 0 0.45rem;
+  color: rgba(255, 255, 255, 0.22);
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  transform-origin: center center;
+  transition: color 0.15s ease;
+  pointer-events: none;
+}
+
+.drive-odo-item.is-center {
+  color: #fff;
+  font-weight: 600;
+}
+
+.drive-odo-tag {
+  display: inline-grid;
+  place-items: center;
+  width: 1.05rem;
+  height: 1.05rem;
+  border-radius: 999px;
+  font-family: var(--font-display), sans-serif;
+  font-size: 0.62rem;
+  font-weight: 700;
+  color: #111;
+  background: rgba(255, 255, 255, 0.28);
+}
+
+.drive-odo-item.is-center .drive-odo-tag {
+  background: var(--paint);
+}
+
+.drive-odo.is-sport .drive-odo-item.is-center .drive-odo-tag {
+  background: #ff6a55;
+  color: #1a0806;
+}
+
+.drive-odo.is-crawl .drive-odo-item.is-center .drive-odo-tag {
+  background: #6ed4a0;
+  color: #062016;
+}
+
+.drive-odo-name {
+  font-family: var(--font-display), sans-serif;
+  font-size: 0.78rem;
+  letter-spacing: 0.1em;
+}
+
+@media (max-width: 700px) and (orientation: landscape) {
+  .drive-odo {
+    min-width: 6.2rem;
+    width: 6.2rem;
+    padding: 0.22rem 0.28rem;
+  }
+}
 .cockpit-pedals {
   position: absolute;
   right: 0.85rem;
@@ -1501,6 +1704,161 @@ body {
 
 .conn-howto .conn-steps {
   margin-top: 0.25rem;
+}
+
+.conn-video {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  z-index: 2;
+}
+
+.conn-select {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  width: 100%;
+  margin: 0;
+  padding: 0.55rem 0.7rem;
+  border-radius: 0.55rem;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.04);
+  color: #fff;
+  cursor: pointer;
+  text-align: left;
+}
+
+.conn-select.is-open {
+  border-color: rgba(245, 224, 0, 0.4);
+  background: rgba(245, 224, 0, 0.06);
+}
+
+.conn-select-value {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+}
+
+.conn-select-value strong {
+  font-size: 0.82rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+.conn-select-value em {
+  font-style: normal;
+  font-size: 0.62rem;
+  color: rgba(255, 255, 255, 0.45);
+}
+
+.conn-select-chev {
+  flex-shrink: 0;
+  font-size: 0.55rem;
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.conn-select-menu {
+  list-style: none;
+  margin: 0;
+  padding: 0.25rem;
+  max-height: 11rem;
+  overflow-y: auto;
+  border-radius: 0.55rem;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(10, 11, 14, 0.98);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45);
+}
+
+.conn-select-menu li {
+  margin: 0;
+}
+
+.conn-select-opt {
+  display: flex;
+  flex-direction: column;
+  gap: 0.08rem;
+  width: 100%;
+  margin: 0;
+  padding: 0.5rem 0.6rem;
+  border: none;
+  border-radius: 0.4rem;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.78);
+  cursor: pointer;
+  text-align: left;
+}
+
+.conn-select-opt:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.conn-select-opt.is-active {
+  background: rgba(245, 224, 0, 0.12);
+  color: #fff;
+}
+
+.conn-select-opt strong {
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.conn-select-opt em {
+  font-style: normal;
+  font-size: 0.6rem;
+  color: rgba(255, 255, 255, 0.42);
+}
+
+.conn-debug {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+  margin: 0.15rem 0 0;
+  padding: 0.55rem 0.65rem;
+  border-radius: 0.55rem;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.03);
+  cursor: pointer;
+}
+
+.conn-debug input {
+  margin-top: 0.15rem;
+  accent-color: var(--paint);
+}
+
+.conn-debug span {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.conn-debug strong {
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+.conn-debug em {
+  font-style: normal;
+  font-size: 0.62rem;
+  color: rgba(255, 255, 255, 0.45);
+}
+
+.conn-ios {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  padding: 0.7rem 0.75rem;
+  border-radius: 0.65rem;
+  border: 1px solid rgba(255, 160, 80, 0.35);
+  background: rgba(255, 120, 40, 0.08);
+}
+
+.conn-ios .conn-btn {
+  text-align: center;
+  text-decoration: none;
 }
 
 .conn-label {

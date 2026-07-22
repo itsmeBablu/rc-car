@@ -52,9 +52,14 @@ void BatteryMonitor::begin(StatusFn onStatus) {
   emitIfChanged(true);
 }
 
+void BatteryMonitor::setIntervals(uint32_t sampleMs, uint32_t minEmitMs) {
+  _sampleMs = sampleMs < 50 ? 50 : sampleMs;
+  _minEmitMs = minEmitMs < 100 ? 100 : minEmitMs;
+}
+
 void BatteryMonitor::loop() {
   const uint32_t now = millis();
-  if (now - _lastSampleMs < 200) return;
+  if (now - _lastSampleMs < _sampleMs) return;
   _lastSampleMs = now;
   sample();
   emitIfChanged(false);
@@ -94,7 +99,7 @@ void BatteryMonitor::emitIfChanged(bool force) {
                        _charging != _lastEmittedChg || _full != _lastEmittedFull;
   if (!force) {
     if (!changed && now - _lastEmitMs < 5000) return;
-    if (changed && now - _lastEmitMs < 400) return;
+    if (changed && now - _lastEmitMs < _minEmitMs) return;
   }
 
   _lastEmittedPct = _percent;

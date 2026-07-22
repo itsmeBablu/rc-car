@@ -4,6 +4,8 @@
 #include "battery_monitor.h"
 #include "camera_stream.h"
 #include "config.h"
+#include "drive_pump.h"
+#include "driving_mode.h"
 #include "motor_control.h"
 #include "ota_update.h"
 #include "servo_control.h"
@@ -19,12 +21,25 @@ WebsocketControl websocket;
 CameraStream camera;
 BatteryMonitor battery;
 OtaUpdate ota;
+DrivingModeManager driveModes;
 
 static bool servicesStarted = false;
 
+static void pumpDriveServices() {
+  static bool busy = false;
+  if (busy) {
+    yield();
+    return;
+  }
+  busy = true;
+  websocket.loop();
+  driveModes.loop(); // motor/servo ramp while camera writes
+  busy = false;
+}
+
 static void startDriveServices() {
   if (!websocket.isRunning()) {
-    websocket.begin(&servo, &motors);
+    websocket.begin(&servo, &motors, &driveModes);
   } else {
     websocket.rebind();
   }
@@ -47,7 +62,9 @@ void setup() {
   Serial.begin(115200);
   delay(800);
   Serial.println();
-  Serial.println("=== RC-Car: Home / Direct / Setup (Wi‑Fi only) ===");
+  Serial.println("=== RC-Car: drive modes + drive-first Wi-Fi ===");
+
+  setDrivePump(pumpDriveServices);
 
   wifi.begin(
       [](const String &json) {
@@ -60,16 +77,17 @@ void setup() {
       },
       onNetworkReady);
 
-  // SoftAP FIRST (before camera) so the radio is up and hotspot is visible
   wifi.bootSoftAp();
   delay(300);
+
+  motors.begin();
+  servo.begin();
 
   if (!camera.begin()) {
     Serial.println("[cam] unavailable — drive still works");
   }
 
-  motors.begin();
-  servo.begin();
+  driveModes.begin(&motors, &servo, &camera, &battery);
 
   http.begin(&wifi, &camera, &battery);
 
@@ -86,13 +104,19 @@ void setup() {
 }
 
 void loop() {
-  wifi.loop();
-  http.loop();
+  // Priority 1: steering / motors / watchdog / mode ramps
+  websocket.loop();
+  driveModes.loop();
+
+  // Priority 2: battery / network
   battery.loop();
+  wifi.loop();
+
+  // Priority 3: HTTP camera / provision
+  http.loop();
+
   if (wifi.isStaConnected()) ota.loop();
   if (!servicesStarted && wifi.isApActive()) {
     startDriveServices();
   }
-  websocket.loop();
-  camera.loop();
 }

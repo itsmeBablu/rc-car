@@ -4,15 +4,24 @@ import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { AnalogCluster } from "@/components/AnalogCluster";
 import { CameraView } from "@/components/CameraView";
 import { ConnectionModal } from "@/components/ConnectionModal";
+import { DriveModeSwitch, type DriveModeId } from "@/components/DriveModeSwitch";
 import { MotorPanel } from "@/components/MotorPanel";
 import { SteeringWheel } from "@/components/SteeringWheel";
 import { useCarConnection } from "@/hooks/useCarConnection";
 import { useCarSocket } from "@/hooks/useCarSocket";
-import { MOTOR_MAX, SERVO_CENTER, wheelDegToServo } from "@/lib/protocol";
+import { loadDebugUi, saveDebugUi } from "@/lib/carApi";
+import {
+  loadDriveMode,
+  MOTOR_MAX,
+  saveDriveMode,
+  SERVO_CENTER,
+  wheelDegToServo,
+} from "@/lib/protocol";
 
 export function Cockpit() {
   const conn = useCarConnection();
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [debugUi, setDebugUi] = useState(false);
   const [wheelDeg, setWheelDeg] = useState(0);
   const [servoAngle, setServoAngle] = useState(SERVO_CENTER);
   const [left, setLeft] = useState(0);
@@ -23,9 +32,20 @@ export function Cockpit() {
   const [usbPower, setUsbPower] = useState(false);
   const [charging, setCharging] = useState(false);
   const [chargeFull, setChargeFull] = useState(false);
+  const [driveMode, setDriveMode] = useState<DriveModeId>("NORMAL");
   const animRef = useRef<number | null>(null);
 
   const ready = conn.phase === "ready";
+
+  useEffect(() => {
+    setDriveMode(loadDriveMode());
+    setDebugUi(loadDebugUi());
+  }, []);
+
+  const changeDebugUi = (on: boolean) => {
+    setDebugUi(on);
+    saveDebugUi(on);
+  };
 
   // Auto-open when we need the user; auto-close once linked
   useEffect(() => {
@@ -46,6 +66,7 @@ export function Cockpit() {
     sendDrive: sendDriveWs,
     sendStop: sendStopWs,
     sendLights: sendLightsWs,
+    sendMode,
   } = useCarSocket({
     url: conn.wsUrl || "ws://0.0.0.0:81",
     enabled: ready && Boolean(conn.wsUrl),
@@ -56,10 +77,28 @@ export function Cockpit() {
       if (typeof msg.usb === "boolean") setUsbPower(msg.usb);
       if (typeof msg.charging === "boolean") setCharging(msg.charging);
       if (typeof msg.full === "boolean") setChargeFull(msg.full);
+      if (typeof msg.mode === "string") {
+        const m = String(msg.mode).toUpperCase();
+        if (m === "NORMAL" || m === "SPORT" || m === "CRAWL") {
+          setDriveMode(m);
+          saveDriveMode(m);
+        }
+      }
     },
   });
 
   const canDrive = ready && wsState === "open";
+
+  useEffect(() => {
+    if (!canDrive) return;
+    sendMode(driveMode);
+  }, [canDrive, driveMode, sendMode]);
+
+  const changeDriveMode = (m: DriveModeId) => {
+    setDriveMode(m);
+    saveDriveMode(m);
+    if (canDrive) sendMode(m);
+  };
 
   const sendDrive = (l: number, r: number) => {
     setLeft(l);
@@ -173,11 +212,18 @@ export function Cockpit() {
         message={conn.message}
         error={conn.error}
         homeSsid={conn.homeSsid}
+        homeLanIp={conn.homeLanIp}
+        httpsApp={conn.httpsApp}
         setupApSsid={conn.setupApSsid}
         directApSsid={conn.directApSsid}
         espIp={conn.espIp}
+        videoQuality={conn.videoQuality}
+        onVideoQuality={conn.setVideoQuality}
+        debugUi={debugUi}
+        onDebugUi={changeDebugUi}
         onRetry={() => void conn.probe()}
         onRetryDirect={() => void conn.probeDirect()}
+        onProbeIp={(ip) => void conn.probeIp(ip)}
         onOpenSetup={conn.openSetup}
         onSubmitWifi={conn.submitWifi}
         onDisconnect={conn.disconnect}
@@ -191,12 +237,14 @@ export function Cockpit() {
           <CameraView
             streamUrl={conn.streamUrl}
             wifiReady={ready}
+            pollMs={conn.videoPollMs}
             left={left}
             right={right}
             wheelDeg={wheelDeg}
             linkState={wsState}
             wifiLabel={conn.linkLabel || conn.wsUrl || undefined}
             lastAck={lastAck}
+            debug={debugUi}
             onOpenLink={() => setSettingsOpen(true)}
           />
 
@@ -231,6 +279,7 @@ export function Cockpit() {
                 wheelDeg={wheelDeg}
                 onWheelDeg={applyWheel}
                 onRelease={autoCenter}
+                debug={debugUi}
               />
             </div>
           </div>
@@ -243,6 +292,11 @@ export function Cockpit() {
               usb={usbPower}
               charging={charging}
               full={chargeFull}
+            />
+            <DriveModeSwitch
+              mode={driveMode}
+              onChange={changeDriveMode}
+              disabled={!canDrive}
             />
           </div>
 

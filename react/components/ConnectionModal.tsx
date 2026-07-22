@@ -1,8 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ConnPhase, LinkPath } from "@/hooks/useCarConnection";
-import { AP_IP, AP_PASS } from "@/lib/carApi";
+import {
+  AP_IP,
+  AP_PASS,
+  type VideoQuality,
+  VIDEO_QUALITY_OPTIONS,
+} from "@/lib/carApi";
 
 type Props = {
   open: boolean;
@@ -12,11 +17,18 @@ type Props = {
   message: string | null;
   error: string | null;
   homeSsid: string;
+  homeLanIp?: string;
+  httpsApp?: boolean;
   setupApSsid: string;
   directApSsid: string;
   espIp: string;
+  videoQuality: VideoQuality;
+  onVideoQuality: (q: VideoQuality) => void | Promise<void>;
+  debugUi: boolean;
+  onDebugUi: (on: boolean) => void;
   onRetry: () => void;
   onRetryDirect: () => void;
+  onProbeIp?: (ip: string) => void | Promise<void>;
   onOpenSetup: () => void;
   onSubmitWifi: (ssid: string, password: string) => Promise<void>;
   onDisconnect: () => void;
@@ -33,10 +45,17 @@ export function ConnectionModal({
   message,
   error,
   homeSsid,
+  homeLanIp = "",
+  httpsApp = false,
   directApSsid,
   espIp,
+  videoQuality,
+  onVideoQuality,
+  debugUi,
+  onDebugUi,
   onRetry,
   onRetryDirect,
+  onProbeIp,
   onOpenSetup,
   onSubmitWifi,
   onDisconnect,
@@ -48,10 +67,30 @@ export function ConnectionModal({
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [wifiBusy, setWifiBusy] = useState(false);
+  const [manualIp, setManualIp] = useState(homeLanIp);
+  const [videoOpen, setVideoOpen] = useState(false);
+  const videoRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (initialSsid) setSsid(initialSsid);
   }, [initialSsid]);
+
+  useEffect(() => {
+    if (homeLanIp) setManualIp(homeLanIp);
+  }, [homeLanIp]);
+
+  useEffect(() => {
+    if (!videoOpen) return;
+    const onDoc = (e: MouseEvent) => {
+      if (!videoRef.current?.contains(e.target as Node)) setVideoOpen(false);
+    };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [videoOpen]);
+
+  useEffect(() => {
+    if (!open) setVideoOpen(false);
+  }, [open]);
 
   if (!open) return null;
 
@@ -65,6 +104,9 @@ export function ConnectionModal({
   };
 
   const probing = phase === "probing";
+  const videoOpt =
+    VIDEO_QUALITY_OPTIONS.find((o) => o.id === videoQuality) ??
+    VIDEO_QUALITY_OPTIONS[0]!;
 
   return (
     <div
@@ -99,13 +141,55 @@ export function ConnectionModal({
           <div className="conn-block conn-stack">
             <p className="conn-lead">Not on the car’s network yet.</p>
 
+            {httpsApp ? (
+              <div className="conn-ios">
+                <p className="conn-path-label">iPhone / HTTPS app</p>
+                <p className="conn-copy">
+                  Safari blocks HTTPS apps from talking to a local{" "}
+                  <code className="conn-code">http://</code> address — Safari
+                  itself can open the car.
+                </p>
+                <a
+                  className="conn-btn conn-btn-primary"
+                  href={`http://${AP_IP}/`}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  SoftAP · {AP_IP}
+                </a>
+                {homeLanIp ? (
+                  <a
+                    className="conn-btn conn-btn-primary"
+                    href={`http://${homeLanIp}/`}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Home LAN · {homeLanIp}
+                  </a>
+                ) : (
+                  <p className="conn-foot">
+                    No saved home IP yet — connect SoftAP once, set home Wi‑Fi,
+                    then reopen from Safari on your router.
+                  </p>
+                )}
+              </div>
+            ) : null}
+
             <div className="conn-row">
               <section className="conn-card">
                 <div className="conn-card-top">
                   <span className="conn-badge">A</span>
                   <h3 className="conn-card-title">Home</h3>
                 </div>
-                <p className="conn-copy">Same router as the car.</p>
+                <p className="conn-copy">
+                  Phone on the same router as the car
+                  {homeLanIp ? (
+                    <>
+                      {" "}
+                      · <code className="conn-code">{homeLanIp}</code>
+                    </>
+                  ) : null}
+                </p>
                 <button type="button" onClick={onRetry} className="conn-btn conn-btn-primary">
                   Reconnect
                 </button>
@@ -117,24 +201,44 @@ export function ConnectionModal({
                   <h3 className="conn-card-title">Direct</h3>
                 </div>
                 <p className="conn-copy">
-                  Join <strong>{directApSsid}</strong>
-                  <br />
+                  Join <strong>{directApSsid}</strong> /{" "}
                   <code className="conn-code">{AP_PASS}</code>
                 </p>
                 <button
                   type="button"
-                  onClick={onRetryDirect}
                   className="conn-btn conn-btn-primary"
+                  onClick={onRetryDirect}
                 >
                   I’m connected
                 </button>
               </section>
             </div>
 
+            {onProbeIp ? (
+              <div className="conn-block">
+                <p className="conn-path-label">Car IP</p>
+                <input
+                  className="conn-input"
+                  value={manualIp}
+                  onChange={(e) => setManualIp(e.target.value)}
+                  placeholder="192.168.1.50"
+                  inputMode="decimal"
+                  autoComplete="off"
+                />
+                <button
+                  type="button"
+                  className="conn-btn"
+                  onClick={() => void onProbeIp(manualIp)}
+                >
+                  Try IP
+                </button>
+              </div>
+            ) : null}
+
             <p className="conn-foot">
-              Ignore “no internet”. Check{" "}
+              Ignore “no internet” on SoftAP. Status page:{" "}
               <a className="conn-link" href={`http://${AP_IP}/`} target="_blank" rel="noreferrer">
-                {AP_IP}
+                http://{AP_IP}/
               </a>
             </p>
           </div>
@@ -144,19 +248,16 @@ export function ConnectionModal({
           <div className="conn-block conn-stack">
             <p className="conn-lead">Home Wi‑Fi for the car</p>
             <p className="conn-copy">
-              Stay on <strong>{directApSsid}</strong>, then enter your router name and password.
               The car joins that network (phone stays on the hotspot until you switch).
             </p>
             <label className="conn-label">
-              Network name
+              SSID
               <input
                 value={ssid}
                 onChange={(e) => setSsid(e.target.value)}
                 disabled={busy || phase === "connecting_sta"}
                 className="conn-input"
                 autoComplete="off"
-                autoCapitalize="none"
-                spellCheck={false}
               />
             </label>
             <label className="conn-label">
@@ -167,14 +268,14 @@ export function ConnectionModal({
                 onChange={(e) => setPassword(e.target.value)}
                 disabled={busy || phase === "connecting_sta"}
                 className="conn-input"
-                autoComplete="current-password"
+                autoComplete="off"
               />
             </label>
             <button
               type="button"
+              className="conn-btn conn-btn-primary"
               disabled={!ssid.trim() || busy || phase === "connecting_sta"}
               onClick={() => void onConnect()}
-              className="conn-btn conn-btn-primary"
             >
               {phase === "connecting_sta" ? "Connecting car…" : "Save & connect car"}
             </button>
@@ -193,11 +294,21 @@ export function ConnectionModal({
                 `Switch your phone to ${homeSsid || "home Wi‑Fi"}, then reconnect.`}
             </p>
             {espIp ? <p className="conn-mono">Car IP · {espIp}</p> : null}
+            {espIp ? (
+              <a
+                className="conn-btn conn-btn-primary"
+                href={`http://${espIp}/`}
+                target="_blank"
+                rel="noreferrer"
+              >
+                Open car in Safari
+              </a>
+            ) : null}
             <button type="button" onClick={onRetry} className="conn-btn conn-btn-primary">
               Reconnect
             </button>
             <button type="button" onClick={onRetryDirect} className="conn-btn">
-              Stay on {directApSsid}
+              Back to hotspot
             </button>
           </div>
         )}
@@ -219,12 +330,68 @@ export function ConnectionModal({
             </div>
 
             <p className="conn-hint">
-              Tap Drive — no notification. Wheel and pedals talk to the car over Wi‑Fi.
+              Drive uses a persistent WebSocket. Video is separate HTTP — frames
+              drop first if the car is busy.
             </p>
 
             <button type="button" onClick={onClose} className="conn-btn conn-btn-primary">
               Drive
             </button>
+
+            <div className="conn-video" ref={videoRef}>
+              <p className="conn-path-label">Video quality</p>
+              <button
+                type="button"
+                className={`conn-select${videoOpen ? " is-open" : ""}`}
+                aria-haspopup="listbox"
+                aria-expanded={videoOpen}
+                onClick={() => setVideoOpen((v) => !v)}
+              >
+                <span className="conn-select-value">
+                  <strong>{videoOpt.label}</strong>
+                  <em>{videoOpt.hint}</em>
+                </span>
+                <span className="conn-select-chev" aria-hidden>
+                  {videoOpen ? "▲" : "▼"}
+                </span>
+              </button>
+              {videoOpen ? (
+                <ul className="conn-select-menu" role="listbox">
+                  {VIDEO_QUALITY_OPTIONS.map((opt) => (
+                    <li key={opt.id}>
+                      <button
+                        type="button"
+                        role="option"
+                        aria-selected={videoQuality === opt.id}
+                        className={`conn-select-opt${
+                          videoQuality === opt.id ? " is-active" : ""
+                        }`}
+                        onClick={() => {
+                          void onVideoQuality(opt.id);
+                          setVideoOpen(false);
+                        }}
+                      >
+                        <strong>{opt.label}</strong>
+                        <em>{opt.hint}</em>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+              <p className="conn-foot">Steering always wins over video.</p>
+            </div>
+
+            <label className="conn-debug">
+              <input
+                type="checkbox"
+                checked={debugUi}
+                onChange={(e) => onDebugUi(e.target.checked)}
+              />
+              <span>
+                <strong>Debug</strong>
+                <em>Show WS / motor / camera overlay</em>
+              </span>
+            </label>
 
             <div className="conn-row">
               <button type="button" onClick={onRetry} className="conn-btn">

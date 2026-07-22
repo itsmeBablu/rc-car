@@ -7,6 +7,7 @@ import type { ConnectionState } from "@/hooks/useCarSocket";
 type Props = {
   streamUrl: string | null;
   wifiReady: boolean;
+  pollMs?: number;
   debug?: boolean;
   left?: number;
   right?: number;
@@ -32,6 +33,7 @@ function toJpgUrl(streamOrBase: string): string {
 export function CameraView({
   streamUrl,
   wifiReady,
+  pollMs = 200,
   debug,
   left = 0,
   right = 0,
@@ -67,6 +69,11 @@ export function CameraView({
         const res = await fetch(`${jpgBase}?t=${Date.now()}`, {
           cache: "no-store",
         });
+        if (res.status === 204) {
+          // Frame dropped on ESP — drive wins; keep last image
+          if (!cancelled) timer = setTimeout(tick, pollMs);
+          return;
+        }
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const blob = await res.blob();
         if (cancelled) return;
@@ -83,7 +90,9 @@ export function CameraView({
           if (!okRef.current) setOk(false);
         }
       }
-      if (!cancelled) timer = setTimeout(tick, okRef.current ? 120 : 400);
+      if (!cancelled) {
+        timer = setTimeout(tick, okRef.current ? pollMs : Math.max(pollMs, 400));
+      }
     };
 
     void tick();
@@ -95,7 +104,7 @@ export function CameraView({
         blobRef.current = null;
       }
     };
-  }, [canPoll, jpgBase]);
+  }, [canPoll, jpgBase, pollMs]);
 
   return (
     <div className="windscreen glass-screen relative flex h-full min-h-0 w-full flex-1 items-center justify-center overflow-hidden">

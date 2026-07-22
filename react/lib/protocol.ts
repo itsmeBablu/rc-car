@@ -49,3 +49,24 @@ export function stopMessage(): string {
 export function lightsMessage(on: boolean): string {
   return JSON.stringify({ cmd: "lights", on });
 }
+
+export function pingMessage(): string {
+  return JSON.stringify({ cmd: "ping" });
+}
+
+export function modeMessage(mode: "NORMAL" | "SPORT" | "CRAWL"): string {
+  return JSON.stringify({ mode });
+}
+
+export const DRIVE_MODE_KEY = "rc-car-drive-mode";
+
+export function loadDriveMode(): "NORMAL" | "SPORT" | "CRAWL" {
+  if (typeof window === "undefined") return "NORMAL";
+  const v = localStorage.getItem(DRIVE_MODE_KEY);
+  if (v === "SPORT" || v === "CRAWL" || v === "NORMAL") return v;
+  return "NORMAL";
+}
+
+export function saveDriveMode(mode: "NORMAL" | "SPORT" | "CRAWL") {
+  localStorage.setItem(DRIVE_MODE_KEY, mode);
+}
