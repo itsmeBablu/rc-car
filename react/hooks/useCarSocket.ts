@@ -23,6 +23,12 @@ export function useCarSocket(options: Options = {}) {
 
   const [state, setState] = useState<ConnectionState>("idle");
   const [lastAck, setLastAck] = useState<string | null>(null);
+  const [telemetry, setTelemetry] = useState<{
+    batt?: number;
+    usb?: boolean;
+    charging?: boolean;
+    full?: boolean;
+  }>({});
   const wsRef = useRef<WebSocket | null>(null);
   const retryRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const angleRef = useRef(90);
@@ -80,7 +86,7 @@ export function useCarSocket(options: Options = {}) {
       ws = new WebSocket(url);
     } catch {
       setState("error");
-      retryRef.current = setTimeout(() => connect(), 1500);
+      retryRef.current = setTimeout(() => connect(), 800);
       return;
     }
 
@@ -92,7 +98,26 @@ export function useCarSocket(options: Options = {}) {
     };
 
     ws.onmessage = (ev) => {
-      setLastAck(typeof ev.data === "string" ? ev.data : String(ev.data));
+      const raw = typeof ev.data === "string" ? ev.data : String(ev.data);
+      setLastAck(raw);
+      try {
+        const j = JSON.parse(raw) as {
+          batt?: number;
+          usb?: boolean;
+          charging?: boolean;
+          full?: boolean;
+        };
+        if (typeof j.batt === "number") {
+          setTelemetry({
+            batt: j.batt,
+            usb: j.usb,
+            charging: j.charging,
+            full: j.full,
+          });
+        }
+      } catch {
+        /* ignore */
+      }
     };
 
     ws.onerror = () => {
@@ -102,7 +127,7 @@ export function useCarSocket(options: Options = {}) {
     ws.onclose = () => {
       setState("closed");
       wsRef.current = null;
-      retryRef.current = setTimeout(() => connect(), 1500);
+      retryRef.current = setTimeout(() => connect(), 800);
     };
   });
 
@@ -125,5 +150,14 @@ export function useCarSocket(options: Options = {}) {
     };
   }, [enabled, url]);
 
-  return { state, lastAck, sendSteer, sendCenter, sendDrive, sendStop, sendLights };
+  return {
+    state,
+    lastAck,
+    telemetry,
+    sendSteer,
+    sendCenter,
+    sendDrive,
+    sendStop,
+    sendLights,
+  };
 }

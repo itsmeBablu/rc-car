@@ -2,7 +2,6 @@
 #include <WiFi.h>
 
 #include "battery_monitor.h"
-#include "ble_provision.h"
 #include "camera_stream.h"
 #include "config.h"
 #include "motor_control.h"
@@ -14,59 +13,65 @@
 ServoControl servo;
 MotorControl motors;
 WifiControl wifi;
-BleProvision ble;
 WebsocketControl websocket;
 CameraStream camera;
 BatteryMonitor battery;
 OtaUpdate ota;
 
+static uint32_t gLastBattBroadcastMs = 0;
+static uint32_t gCamStartMs = 0;
+static bool gCamStarted = false;
+
 void setup() {
   Serial.begin(115200);
-  delay(800);
+  delay(600);
   Serial.println();
-  Serial.println("=== RC-Car: BLE + WiFi + camera + OTA ===");
-
-  // Camera FIRST — needs LEDC timer 0 + PSRAM before servo steals channels
-  if (!camera.begin()) {
-    Serial.println("[cam] unavailable — drive still works");
-  }
+  Serial.println("=== RC-Car: SoftAP drive + optional home Wi‑Fi ===");
+  Serial.println("[prio] 1) stay linked  2) motors/servo  3) camera");
 
   motors.begin();
   servo.begin();
 
-  ble.begin(&wifi, &servo, &motors);
+  // SoftAP + HTTP status first — drive path before camera
+  wifi.begin(&battery, &camera);
+  websocket.begin(&servo, &motors);
 
-  battery.begin([](const String &json) { ble.notifyStatus(json); });
-
-  wifi.begin([](const String &json) {
-    ble.notifyStatus(json);
-    if (json.indexOf("\"wifi\":\"connected\"") >= 0) {
-      if (!websocket.isRunning()) {
-        websocket.begin(&servo, &motors);
-      }
-      camera.startServer();
-      ota.begin();
-      if (!ble.isClientConnected()) {
-        ble.restartAdvertising();
-      }
-    }
+  battery.begin([](const String &json) {
+    // Push battery over WS when someone is linked
+    websocket.broadcast(json);
   });
 
-  delay(500);
-  wifi.trySaved();
+  gCamStartMs = millis();
 
-  Serial.println("[ready] BLE: RC Car | OTA when WiFi up | http://<ip>/jpg");
+  Serial.printf("[ready] Join SoftAP \"%s\" / %s\n", AP_SSID, AP_PASS);
+  Serial.printf("[ready] Control  ws://%s:%u\n", WiFi.softAPIP().toString().c_str(),
+                WS_PORT);
+  Serial.printf("[ready] Debug    http://%s/\n", WiFi.softAPIP().toString().c_str());
 }
 
 void loop() {
-  ble.loop();
+  // Control path first
+  websocket.loop();
   wifi.loop();
   battery.loop();
   ota.loop();
-  websocket.loop();
-  // If WiFi came up without callback race, ensure HTTP cam is on
-  if (WiFi.status() == WL_CONNECTED && !camera.isServerRunning()) {
-    camera.startServer();
+
+  // Camera last — init after ~2s so SoftAP/WS settle
+  if (!gCamStarted && millis() - gCamStartMs > 2000) {
+    gCamStarted = true;
+    if (!camera.begin()) {
+      Serial.println("[cam] unavailable — drive still works");
+    }
   }
   camera.loop();
+
+  if (wifi.homeConnected() && !ota.isReady()) {
+    ota.begin();
+  }
+
+  // Soft heartbeat if no battery change
+  if (millis() - gLastBattBroadcastMs > 5000) {
+    gLastBattBroadcastMs = millis();
+    websocket.broadcast(battery.statusJson());
+  }
 }

@@ -5,12 +5,12 @@
 class CameraStream {
 public:
   bool begin();
-  void startServer();
   void loop();
   bool isReady() const { return _ready; }
-  bool isServerRunning() const { return _serverRunning; }
+  void markHttpAttached() { _httpAttached = true; }
+  bool isHttpAttached() const { return _httpAttached; }
 
 private:
   bool _ready = false;
-  bool _serverRunning = false;
+  bool _httpAttached = false;
 };

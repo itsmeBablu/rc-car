@@ -2,192 +2,67 @@
 
 import { useEffect, useRef, useState } from "react";
 import { ToggleSwitch } from "@/components/ToggleSwitch";
-import type { BleState } from "@/hooks/useBleProvision";
-import type { WifiNetwork, WifiStatus } from "@/lib/ble";
+import type { ConnectionState } from "@/hooks/useCarSocket";
+import {
+  AP_HOST,
+  AP_PASS,
+  AP_SSID,
+  hostToHttpBase,
+  hostToWsUrl,
+  type LinkMode,
+} from "@/lib/protocol";
+
+type CarStatus = {
+  mode?: string;
+  apIp?: string;
+  ip?: string;
+  ssid?: string;
+  home?: boolean;
+  batt?: number;
+  ws?: string;
+  wsHome?: string;
+};
 
 type Props = {
   open: boolean;
   onClose: () => void;
-  mounted: boolean;
-  supported: boolean;
-  bleState: BleState;
-  error: string | null;
-  controlError?: string | null;
-  wifiStatus: WifiStatus | null;
-  networks: WifiNetwork[];
-  transport: "wifi" | "ble" | "none";
-  preferBle: boolean;
-  onPreferBleChange: (value: boolean) => void;
+  mode: LinkMode;
+  host: string;
+  wsState: ConnectionState;
+  linked: boolean;
   debug: boolean;
-  onDebugChange: (value: boolean) => void;
-  onConnectBle: () => void;
-  onScanWifi: () => Promise<void>;
-  onProvisionWifi: (ssid: string, password: string) => Promise<void>;
-  onDisconnectWifi: () => Promise<void>;
-  onForgetWifi: () => Promise<void>;
-  initialSsid?: string;
-  initialPassword?: string;
+  onDebugChange: (v: boolean) => void;
+  onConnectHotspot: () => void;
+  onConnectHome: (host: string) => void;
+  onDisconnect: () => void;
 };
-
-function WifiForm({
-  wifi,
-  networks,
-  ssid,
-  password,
-  busy,
-  wifiConnected,
-  initialSsid,
-  onSsid,
-  onPassword,
-  onScan,
-  onSubmit,
-  onForget,
-}: {
-  wifi: string;
-  networks: WifiNetwork[];
-  ssid: string;
-  password: string;
-  busy: boolean;
-  wifiConnected: boolean;
-  initialSsid: string;
-  onSsid: (v: string) => void;
-  onPassword: (v: string) => void;
-  onScan: () => void;
-  onSubmit: () => void;
-  onForget: () => void;
-}) {
-  return (
-    <>
-      <div className="flex flex-wrap gap-2">
-        <button
-          type="button"
-          disabled={wifi === "scanning" || wifi === "connecting"}
-          onClick={onScan}
-          className="border border-white/25 px-3 py-1.5 text-xs text-white/80 hover:bg-white/5 disabled:opacity-50"
-        >
-          {wifi === "scanning" ? "Scanning…" : "Scan WiFi"}
-        </button>
-        {!wifiConnected && (
-          <button
-            type="button"
-            onClick={onForget}
-            className="border border-white/15 px-3 py-1.5 text-xs text-white/50 hover:bg-white/5"
-          >
-            Forget saved
-          </button>
-        )}
-      </div>
-
-      {networks.length > 0 && (
-        <label className="flex flex-col gap-1 text-xs text-[var(--rim)]">
-          Network
-          <select
-            value={ssid}
-            onChange={(e) => onSsid(e.target.value)}
-            className="border border-white/15 bg-black/40 px-2 py-1.5 font-mono text-sm text-white outline-none focus:border-[var(--paint)]"
-          >
-            <option value="">— select —</option>
-            {networks.map((n) => (
-              <option key={`${n.ssid}-${n.rssi}`} value={n.ssid}>
-                {n.ssid} ({n.rssi ?? "?"} dBm)
-              </option>
-            ))}
-          </select>
-        </label>
-      )}
-
-      <div className="flex flex-col gap-2">
-        <label className="flex flex-col gap-1 text-xs text-[var(--rim)]">
-          SSID
-          <input
-            value={ssid}
-            onChange={(e) => onSsid(e.target.value)}
-            className="border border-white/15 bg-black/40 px-2 py-1.5 font-mono text-sm text-white outline-none focus:border-[var(--paint)]"
-            autoComplete="off"
-          />
-        </label>
-        <label className="flex flex-col gap-1 text-xs text-[var(--rim)]">
-          Password
-          <input
-            type="password"
-            value={password}
-            onChange={(e) => onPassword(e.target.value)}
-            className="border border-white/15 bg-black/40 px-2 py-1.5 font-mono text-sm text-white outline-none focus:border-[var(--paint)]"
-            autoComplete="off"
-          />
-        </label>
-        <button
-          type="button"
-          disabled={busy || !ssid.trim() || wifi === "connecting"}
-          onClick={onSubmit}
-          className="border border-[var(--rim)] px-3 py-1.5 text-xs text-[var(--rim)] hover:bg-[var(--rim)]/10 disabled:opacity-50"
-        >
-          {wifi === "connecting"
-            ? "Joining…"
-            : wifiConnected
-              ? "Join other WiFi"
-              : "Join WiFi"}
-        </button>
-        {initialSsid ? (
-          <p className="text-[10px] text-white/35">
-            {wifiConnected
-              ? `Saved “${initialSsid}”.`
-              : `Saved “${initialSsid}”. Optional — camera only. Drive works over Bluetooth with no WiFi.`}
-          </p>
-        ) : (
-          <p className="text-[10px] text-white/35">
-            WiFi is optional — for camera. Drive with Bluetooth only in no-WiFi zones.
-          </p>
-        )}
-      </div>
-    </>
-  );
-}
 
 export function LinkSettingsModal({
   open,
   onClose,
-  mounted,
-  supported,
-  bleState,
-  error,
-  controlError,
-  wifiStatus,
-  networks,
-  transport,
-  preferBle,
-  onPreferBleChange,
+  mode,
+  host,
+  wsState,
+  linked,
   debug,
   onDebugChange,
-  onConnectBle,
-  onScanWifi,
-  onProvisionWifi,
-  onDisconnectWifi,
-  onForgetWifi,
-  initialSsid = "",
-  initialPassword = "",
+  onConnectHotspot,
+  onConnectHome,
+  onDisconnect,
 }: Props) {
-  const [ssid, setSsid] = useState(initialSsid);
-  const [password, setPassword] = useState(initialPassword);
-  const [busy, setBusy] = useState(false);
-  const [changeNetwork, setChangeNetwork] = useState(false);
+  const [tab, setTab] = useState<LinkMode>(mode);
+  const [homeHost, setHomeHost] = useState(host || "");
+  const [status, setStatus] = useState<CarStatus | null>(null);
+  const [probeErr, setProbeErr] = useState<string | null>(null);
+  const [probing, setProbing] = useState(false);
   const dialogRef = useRef<HTMLDialogElement>(null);
 
-  const wifi = wifiStatus?.wifi ?? "disconnected";
-  const bleOk = bleState === "connected";
-  const bleBusy = bleState === "connecting";
-  const wifiConnected = wifi === "connected";
-  const showWifiForm = bleOk && (!wifiConnected || changeNetwork);
-
   useEffect(() => {
-    if (!open) return;
-    if (initialSsid) setSsid((s) => s || initialSsid);
-    if (initialPassword) setPassword((p) => p || initialPassword);
-  }, [open, initialSsid, initialPassword]);
-
-  useEffect(() => {
-    if (!open) setChangeNetwork(false);
-  }, [open]);
+    if (open) {
+      setTab(mode);
+      setHomeHost(host || "");
+    }
+  }, [open, mode, host]);
 
   useEffect(() => {
     const el = dialogRef.current;
@@ -199,26 +74,34 @@ export function LinkSettingsModal({
     }
   }, [open]);
 
-  const submit = async () => {
-    if (!ssid.trim()) return;
-    setBusy(true);
+  const probe = async (targetHost: string) => {
+    setProbing(true);
+    setProbeErr(null);
     try {
-      await onProvisionWifi(ssid.trim(), password);
-      setChangeNetwork(false);
+      const base = hostToHttpBase(targetHost);
+      const res = await fetch(`${base}/status?t=${Date.now()}`, {
+        cache: "no-store",
+        signal: AbortSignal.timeout(4000),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const j = (await res.json()) as CarStatus;
+      setStatus(j);
+    } catch (e) {
+      setStatus(null);
+      setProbeErr(e instanceof Error ? e.message : String(e));
     } finally {
-      setBusy(false);
+      setProbing(false);
     }
   };
 
-  const disconnectWifi = async () => {
-    setBusy(true);
-    try {
-      await onDisconnectWifi();
-      setChangeNetwork(true);
-    } finally {
-      setBusy(false);
-    }
-  };
+  const label =
+    wsState === "open"
+      ? "Linked"
+      : wsState === "connecting"
+        ? "Connecting…"
+        : wsState === "error"
+          ? "Error"
+          : "Not linked";
 
   return (
     <dialog
@@ -242,124 +125,176 @@ export function LinkSettingsModal({
         </button>
       </div>
 
+      <div className="flex gap-1 border-b border-white/10 px-3 pt-2">
+        {(
+          [
+            ["hotspot", "Hotspot"],
+            ["home", "Home Wi‑Fi"],
+          ] as const
+        ).map(([id, name]) => (
+          <button
+            key={id}
+            type="button"
+            onClick={() => setTab(id)}
+            className={`px-3 py-2 text-xs tracking-wide ${
+              tab === id
+                ? "border-b-2 border-[var(--paint)] text-[var(--paint)]"
+                : "text-white/45 hover:text-white/70"
+            }`}
+          >
+            {name}
+          </button>
+        ))}
+      </div>
+
       <div className="flex max-h-[75dvh] flex-col gap-4 overflow-y-auto px-4 py-4">
-        <div className="flex flex-wrap items-center gap-2">
-          {mounted && supported && (
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <span className="font-mono text-[11px] text-white/50">
+            {label}
+            {linked && mode === "hotspot" ? ` · ${AP_HOST}` : null}
+            {linked && mode === "home" && host ? ` · ${host}` : null}
+          </span>
+          {linked && (
             <button
               type="button"
-              onClick={onConnectBle}
-              disabled={bleBusy}
-              className="border border-[var(--paint)]/70 px-3 py-1.5 text-xs text-[var(--paint)] hover:bg-[var(--paint)]/10 disabled:opacity-50"
+              onClick={onDisconnect}
+              className="border border-white/20 px-2 py-1 text-[10px] text-white/50 hover:bg-white/5"
             >
-              {bleOk
-                ? "Bluetooth OK"
-                : bleBusy
-                  ? "Pairing…"
-                  : "Connect Bluetooth"}
+              Disconnect
             </button>
           )}
-          <span className="font-mono text-[11px] text-white/50">
-            {bleBusy
-              ? "BLE…"
-              : `${transport.toUpperCase()}${wifiStatus?.ip ? ` · ${wifiStatus.ip}` : ""}`}
-          </span>
         </div>
-
-        {(wifi === "connecting" || wifi === "scanning") && (
-          <p className="rounded-lg border border-[var(--paint)]/25 bg-[var(--paint)]/5 px-3 py-2 text-[11px] text-[var(--paint)]/90">
-            {wifi === "scanning"
-              ? "Scanning WiFi…"
-              : `Joining${wifiStatus?.ssid ? ` “${wifiStatus.ssid}”` : ""}…`}
-          </p>
-        )}
-
-        <ToggleSwitch
-          label="Controls via Bluetooth"
-          checked={preferBle}
-          onChange={onPreferBleChange}
-          hint={
-            preferBle
-              ? "Drive servo + motors over BLE. Works with no WiFi. Join WiFi only for camera."
-              : "Drive over WiFi WebSocket when linked; BLE is fallback."
-          }
-        />
 
         <ToggleSwitch
           label="Debug"
           checked={debug}
           onChange={onDebugChange}
-          hint="Shows a small debug panel under Link (top right)."
+          hint="Extra status under the windscreen Link chip."
         />
 
-        {mounted && !supported && (
+        {tab === "hotspot" && (
+          <div className="flex flex-col gap-3">
+            <p className="text-[11px] uppercase tracking-wider text-white/40">
+              No Wi‑Fi zone — drive via car hotspot
+            </p>
+            <ol className="list-decimal space-y-2 pl-4 text-xs leading-relaxed text-white/75">
+              <li>
+                Join Wi‑Fi{" "}
+                <code className="rounded bg-white/10 px-1 font-mono text-[11px]">
+                  {AP_SSID}
+                </code>{" "}
+                /{" "}
+                <code className="rounded bg-white/10 px-1 font-mono text-[11px]">
+                  {AP_PASS}
+                </code>
+              </li>
+              <li>Tap Connect — motors &amp; steering over WebSocket.</li>
+              <li>
+                Optional setup page:{" "}
+                <a
+                  className="text-[var(--paint)] underline"
+                  href={`http://${AP_HOST}/`}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  http://{AP_HOST}/
+                </a>
+              </li>
+            </ol>
+
+            <button
+              type="button"
+              onClick={() => {
+                onConnectHotspot();
+                void probe(AP_HOST);
+              }}
+              className="border border-[var(--paint)]/70 px-3 py-2 text-xs text-[var(--paint)] hover:bg-[var(--paint)]/10"
+            >
+              {linked && mode === "hotspot" ? "Reconnect hotspot" : "Connect hotspot"}
+            </button>
+
+            <button
+              type="button"
+              disabled={probing}
+              onClick={() => void probe(AP_HOST)}
+              className="border border-white/20 px-3 py-1.5 text-[11px] text-white/60 hover:bg-white/5 disabled:opacity-50"
+            >
+              {probing ? "Checking…" : "Ping car status"}
+            </button>
+          </div>
+        )}
+
+        {tab === "home" && (
+          <div className="flex flex-col gap-3">
+            <p className="text-[11px] uppercase tracking-wider text-white/40">
+              Same Wi‑Fi as the car
+            </p>
+            <p className="text-xs leading-relaxed text-white/70">
+              First configure home Wi‑Fi on the car (join SoftAP → open{" "}
+              <code className="rounded bg-white/10 px-1">http://{AP_HOST}/</code>
+              ). Then put your phone back on that network and connect here.
+            </p>
+
+            <label className="flex flex-col gap-1 text-xs text-[var(--rim)]">
+              Car host / IP
+              <input
+                value={homeHost}
+                onChange={(e) => setHomeHost(e.target.value)}
+                placeholder="192.168.x.x or rc-car.local"
+                className="border border-white/15 bg-black/40 px-2 py-1.5 font-mono text-sm text-white outline-none focus:border-[var(--paint)]"
+                autoComplete="off"
+              />
+            </label>
+
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                disabled={!homeHost.trim()}
+                onClick={() => {
+                  onConnectHome(homeHost.trim());
+                  void probe(homeHost.trim());
+                }}
+                className="border border-[var(--paint)]/70 px-3 py-2 text-xs text-[var(--paint)] hover:bg-[var(--paint)]/10 disabled:opacity-50"
+              >
+                Connect home
+              </button>
+              <button
+                type="button"
+                disabled={probing || !homeHost.trim()}
+                onClick={() => void probe(homeHost.trim())}
+                className="border border-white/20 px-3 py-1.5 text-[11px] text-white/60 hover:bg-white/5 disabled:opacity-50"
+              >
+                Ping status
+              </button>
+            </div>
+
+            <p className="text-[10px] text-white/40">
+              WS target:{" "}
+              <code className="font-mono">
+                {homeHost.trim() ? hostToWsUrl(homeHost) : "—"}
+              </code>
+            </p>
+          </div>
+        )}
+
+        {probeErr && (
           <p className="text-xs text-amber-300">
-            Use Chrome/Edge on Android or Windows for Web Bluetooth.
+            Status unreachable: {probeErr}. Join the car network / same LAN, then
+            retry.
           </p>
         )}
-        {error && <p className="text-xs text-red-300">{error}</p>}
-        {controlError && (
-          <p className="text-xs text-red-300">BLE control: {controlError}</p>
-        )}
 
-        {bleOk && (
-          <div className="flex flex-col gap-2">
-            <p className="text-[11px] uppercase tracking-wider text-white/40">WiFi</p>
-
-            {wifiConnected && (
-              <div className="rounded-xl border border-emerald-400/25 bg-emerald-400/5 px-3 py-2.5">
-                <p className="text-xs text-emerald-300">
-                  Connected
-                  {wifiStatus?.ssid ? ` · ${wifiStatus.ssid}` : ""}
-                </p>
-                <p className="mt-0.5 font-mono text-[10px] text-white/45">
-                  {wifiStatus?.ip ?? ""}
-                  {preferBle ? " · camera" : " · camera + control"}
-                </p>
-                <div className="mt-2.5 flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    disabled={busy}
-                    onClick={() => void disconnectWifi()}
-                    className="border border-white/25 px-3 py-1.5 text-xs text-white/80 hover:bg-white/5 disabled:opacity-50"
-                  >
-                    Disconnect
-                  </button>
-                  <button
-                    type="button"
-                    disabled={busy}
-                    onClick={() => setChangeNetwork((v) => !v)}
-                    className="border border-[var(--rim)]/50 px-3 py-1.5 text-xs text-[var(--rim)] hover:bg-[var(--rim)]/10 disabled:opacity-50"
-                  >
-                    {changeNetwork ? "Cancel" : "Change network"}
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {showWifiForm && (
-              <WifiForm
-                wifi={wifi}
-                networks={networks}
-                ssid={ssid}
-                password={password}
-                busy={busy}
-                wifiConnected={wifiConnected}
-                initialSsid={initialSsid}
-                onSsid={setSsid}
-                onPassword={setPassword}
-                onScan={() => void onScanWifi()}
-                onSubmit={() => void submit()}
-                onForget={() => void onForgetWifi()}
-              />
-            )}
-
-            {wifi === "failed" && (
-              <p className="text-xs text-red-300">
-                WiFi failed{wifiStatus?.error ? `: ${wifiStatus.error}` : ""}.
-                {wifiStatus?.error?.includes("ssid_not") &&
-                  " ESP32 needs 2.4 GHz WiFi."}
-              </p>
-            )}
+        {status && (
+          <div className="rounded-lg border border-white/10 bg-black/30 px-3 py-2 font-mono text-[10px] text-white/60">
+            <p>
+              mode={status.mode ?? "?"} home={String(status.home ?? false)}
+              {status.ssid ? ` ssid=${status.ssid}` : ""}
+            </p>
+            <p>
+              ap={status.apIp ?? "?"}
+              {status.ip ? ` · lan=${status.ip}` : ""}
+              {typeof status.batt === "number" ? ` · batt=${status.batt}%` : ""}
+            </p>
           </div>
         )}
       </div>

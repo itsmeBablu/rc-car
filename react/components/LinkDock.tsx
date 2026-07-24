@@ -1,23 +1,23 @@
 "use client";
 
 import type { ConnectionState } from "@/hooks/useCarSocket";
+import type { LinkMode } from "@/lib/protocol";
 
 type Props = {
   state: ConnectionState;
-  transport: "wifi" | "ble" | "none";
+  mode: LinkMode;
   wifiLabel?: string;
   live?: boolean;
   onOpenLink: () => void;
 };
 
-export function LinkDock({ state, transport, wifiLabel, live = false, onOpenLink }: Props) {
+export function LinkDock({ state, mode, wifiLabel, live = false, onOpenLink }: Props) {
   const linked = state === "open";
-  const sub =
-    transport === "wifi"
-      ? wifiLabel?.replace(/^ws:\/\//, "") || "WiFi"
-      : transport === "ble"
-        ? "Bluetooth"
-        : "Not linked";
+  const sub = linked
+    ? mode === "hotspot"
+      ? wifiLabel || "Hotspot"
+      : wifiLabel || "Home Wi‑Fi"
+    : "Not linked";
 
   return (
     <button

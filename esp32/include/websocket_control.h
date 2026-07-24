@@ -10,6 +10,9 @@ public:
   void begin(ServoControl *servo, MotorControl *motors);
   void loop();
   bool isRunning() const { return _running; }
+  /** Broadcast JSON to all clients (battery / status) — low rate. */
+  void broadcast(const String &json);
+  uint8_t clientCount() const;
 
 private:
   WebSocketsServer _ws{WS_PORT};

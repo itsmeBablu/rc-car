@@ -12,24 +12,35 @@ void WebsocketControl::begin(ServoControl *servo, MotorControl *motors) {
   });
   _ws.begin();
   _running = true;
-  Serial.printf("[ws] listening on ws://%s:%u\n",
-                WiFi.localIP().toString().c_str(), WS_PORT);
+  Serial.printf("[ws] control ready — SoftAP ws://%s:%u (and home IP if linked)\n",
+                WiFi.softAPIP().toString().c_str(), WS_PORT);
 }
 
 void WebsocketControl::loop() {
   if (_running) _ws.loop();
 }
 
+void WebsocketControl::broadcast(const String &json) {
+  if (!_running) return;
+  String payload = json;
+  _ws.broadcastTXT(payload);
+}
+
+uint8_t WebsocketControl::clientCount() const {
+  // WebSocketsServer has connectedClients() in newer libs; fall back via loop usage
+  return _running ? 1 : 0; // informational only
+}
+
 void WebsocketControl::onEvent(uint8_t num, WStype_t type, uint8_t *payload,
                                size_t length) {
   switch (type) {
   case WStype_CONNECTED:
-    Serial.printf("[ws] client #%u connected\n", num);
-    _ws.sendTXT(num, "{\"ok\":true,\"servo\":" + String(_servo->getAngle()) + "}");
+    Serial.printf("[ws] client #%u linked\n", num);
+    _ws.sendTXT(num, "{\"ok\":true,\"link\":true}");
     break;
 
   case WStype_DISCONNECTED:
-    Serial.printf("[ws] client #%u disconnected — stop\n", num);
+    Serial.printf("[ws] client #%u gone — STOP\n", num);
     if (_servo) _servo->setAngle(SERVO_CENTER);
     if (_motors) _motors->stop();
     break;
@@ -55,6 +66,7 @@ void WebsocketControl::handleMessage(uint8_t num, const char *msg) {
   }
 
   const char *cmd = doc["cmd"] | "";
+  bool ack = false;
 
   if (strcmp(cmd, "steer") == 0 && doc["angle"].is<int>() && _servo) {
     _servo->setAngle(doc["angle"].as<int>());
@@ -62,21 +74,26 @@ void WebsocketControl::handleMessage(uint8_t num, const char *msg) {
     _servo->setAngle(doc["steer"].as<int>());
   } else if (strcmp(cmd, "center") == 0 && _servo) {
     _servo->setAngle(SERVO_CENTER);
+    ack = true;
   } else if (strcmp(cmd, "drive") == 0 && _motors) {
     _motors->setBoth(doc["left"] | 0, doc["right"] | 0);
+    // no ack — keep motors snappy
   } else if (strcmp(cmd, "stop") == 0) {
     if (_motors) _motors->stop();
     if (_servo) _servo->setAngle(SERVO_CENTER);
+    ack = true;
   } else if (strcmp(cmd, "lights") == 0) {
     bool on = doc["on"] | false;
-    Serial.printf("[ws] lights %s (wire LED pin later)\n", on ? "ON" : "OFF");
+    Serial.printf("[ws] lights %s\n", on ? "ON" : "OFF");
+    ack = true;
+  } else if (strcmp(cmd, "ping") == 0) {
+    ack = true;
   } else {
     _ws.sendTXT(num, "{\"ok\":false,\"error\":\"unknown_cmd\"}");
     return;
   }
 
-  String ack = "{\"ok\":true,\"servo\":" + String(_servo ? _servo->getAngle() : 0) +
-               ",\"left\":" + String(_motors ? _motors->left() : 0) +
-               ",\"right\":" + String(_motors ? _motors->right() : 0) + "}";
-  _ws.sendTXT(num, ack);
+  if (ack) {
+    _ws.sendTXT(num, "{\"ok\":true}");
+  }
 }

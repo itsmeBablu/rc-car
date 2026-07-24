@@ -3,16 +3,17 @@
 import { useEffect, useRef, useState } from "react";
 import { LinkDock } from "@/components/LinkDock";
 import type { ConnectionState } from "@/hooks/useCarSocket";
+import type { LinkMode } from "@/lib/protocol";
 
 type Props = {
   streamUrl: string | null;
-  wifiReady: boolean;
+  cameraEnabled: boolean;
   debug?: boolean;
   left?: number;
   right?: number;
   wheelDeg?: number;
   linkState: ConnectionState;
-  transport: "wifi" | "ble" | "none";
+  mode: LinkMode;
   wifiLabel?: string;
   lastAck?: string | null;
   onOpenLink: () => void;
@@ -32,13 +33,13 @@ function toJpgUrl(streamOrBase: string): string {
 
 export function CameraView({
   streamUrl,
-  wifiReady,
+  cameraEnabled,
   debug,
   left = 0,
   right = 0,
   wheelDeg = 0,
   linkState,
-  transport,
+  mode,
   wifiLabel,
   lastAck,
   onOpenLink,
@@ -50,7 +51,8 @@ export function CameraView({
   const okRef = useRef(false);
 
   const jpgBase = streamUrl ? toJpgUrl(streamUrl) : null;
-  const canPoll = Boolean(wifiReady && jpgBase);
+  const canPoll = Boolean(cameraEnabled && jpgBase);
+  const linked = linkState === "open";
 
   useEffect(() => {
     if (!canPoll || !jpgBase) {
@@ -85,7 +87,8 @@ export function CameraView({
           if (!okRef.current) setOk(false);
         }
       }
-      if (!cancelled) timer = setTimeout(tick, okRef.current ? 120 : 400);
+      // Camera last — slower poll keeps SoftAP / motors snappy
+      if (!cancelled) timer = setTimeout(tick, okRef.current ? 280 : 700);
     };
 
     void tick();
@@ -112,22 +115,18 @@ export function CameraView({
       ) : (
         <div className="z-10 space-y-1 px-4 text-center">
           <p className="font-[family-name:var(--font-display)] text-base tracking-wide text-white/50">
-            {!wifiReady
-              ? transport === "ble"
-                ? "Bluetooth drive ready"
-                : "Camera needs WiFi"
+            {!linked
+              ? "Link to drive"
               : err
                 ? "Camera offline"
-                : "Starting camera…"}
+                : "Camera warming up…"}
           </p>
           <p className="text-[10px] uppercase tracking-widest text-white/30">
-            {!wifiReady
-              ? transport === "ble"
-                ? "No WiFi · camera optional"
-                : "Link → Connect Bluetooth (WiFi optional for camera)"
+            {!linked
+              ? "Hotspot or home Wi‑Fi"
               : err
                 ? err
-                : "fetching…"}
+                : "low priority · drive first"}
           </p>
         </div>
       )}
@@ -136,7 +135,7 @@ export function CameraView({
         <div className="pointer-events-auto link-stack">
           <LinkDock
             state={linkState}
-            transport={transport}
+            mode={mode}
             wifiLabel={wifiLabel}
             live={ok}
             onOpenLink={onOpenLink}
@@ -146,7 +145,7 @@ export function CameraView({
               <p className="text-[8px] uppercase tracking-wider text-white/40">
                 Debug
               </p>
-              <p>link={transport}</p>
+              <p>mode={mode}</p>
               <p>ws={linkState}</p>
               <p>ack={lastAck ?? "—"}</p>
               <p>wheel={wheelDeg.toFixed(0)}°</p>
