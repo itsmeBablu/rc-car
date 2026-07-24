@@ -3,16 +3,17 @@
 import { useEffect, useRef, useState } from "react";
 import { LinkDock } from "@/components/LinkDock";
 import type { ConnectionState } from "@/hooks/useCarSocket";
+import type { LinkMode } from "@/lib/protocol";
 
 type Props = {
   streamUrl: string | null;
-  wifiReady: boolean;
-  pollMs?: number;
+  cameraEnabled: boolean;
   debug?: boolean;
   left?: number;
   right?: number;
   wheelDeg?: number;
   linkState: ConnectionState;
+  mode: LinkMode;
   wifiLabel?: string;
   lastAck?: string | null;
   onOpenLink: () => void;
@@ -32,13 +33,13 @@ function toJpgUrl(streamOrBase: string): string {
 
 export function CameraView({
   streamUrl,
-  wifiReady,
-  pollMs = 200,
+  cameraEnabled,
   debug,
   left = 0,
   right = 0,
   wheelDeg = 0,
   linkState,
+  mode,
   wifiLabel,
   lastAck,
   onOpenLink,
@@ -50,7 +51,8 @@ export function CameraView({
   const okRef = useRef(false);
 
   const jpgBase = streamUrl ? toJpgUrl(streamUrl) : null;
-  const canPoll = Boolean(wifiReady && jpgBase);
+  const canPoll = Boolean(cameraEnabled && jpgBase);
+  const linked = linkState === "open";
 
   useEffect(() => {
     if (!canPoll || !jpgBase) {
@@ -69,11 +71,6 @@ export function CameraView({
         const res = await fetch(`${jpgBase}?t=${Date.now()}`, {
           cache: "no-store",
         });
-        if (res.status === 204) {
-          // Frame dropped on ESP — drive wins; keep last image
-          if (!cancelled) timer = setTimeout(tick, pollMs);
-          return;
-        }
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const blob = await res.blob();
         if (cancelled) return;
@@ -90,9 +87,8 @@ export function CameraView({
           if (!okRef.current) setOk(false);
         }
       }
-      if (!cancelled) {
-        timer = setTimeout(tick, okRef.current ? pollMs : Math.max(pollMs, 400));
-      }
+      // Camera last — slower poll keeps SoftAP / motors snappy
+      if (!cancelled) timer = setTimeout(tick, okRef.current ? 280 : 700);
     };
 
     void tick();
@@ -104,7 +100,7 @@ export function CameraView({
         blobRef.current = null;
       }
     };
-  }, [canPoll, jpgBase, pollMs]);
+  }, [canPoll, jpgBase]);
 
   return (
     <div className="windscreen glass-screen relative flex h-full min-h-0 w-full flex-1 items-center justify-center overflow-hidden">
@@ -119,18 +115,18 @@ export function CameraView({
       ) : (
         <div className="z-10 space-y-1 px-4 text-center">
           <p className="font-[family-name:var(--font-display)] text-base tracking-wide text-white/50">
-            {!wifiReady
-              ? "Connect to car"
+            {!linked
+              ? "Link to drive"
               : err
                 ? "Camera offline"
-                : "Starting camera…"}
+                : "Camera warming up…"}
           </p>
           <p className="text-[10px] uppercase tracking-widest text-white/30">
-            {!wifiReady
-              ? "Tap Link → Connect"
+            {!linked
+              ? "Hotspot or home Wi‑Fi"
               : err
                 ? err
-                : "fetching…"}
+                : "low priority · drive first"}
           </p>
         </div>
       )}
@@ -139,6 +135,7 @@ export function CameraView({
         <div className="pointer-events-auto link-stack">
           <LinkDock
             state={linkState}
+            mode={mode}
             wifiLabel={wifiLabel}
             live={ok}
             onOpenLink={onOpenLink}
@@ -148,7 +145,7 @@ export function CameraView({
               <p className="text-[8px] uppercase tracking-wider text-white/40">
                 Debug
               </p>
-              <p>link=wifi</p>
+              <p>mode={mode}</p>
               <p>ws={linkState}</p>
               <p>ack={lastAck ?? "—"}</p>
               <p>wheel={wheelDeg.toFixed(0)}°</p>

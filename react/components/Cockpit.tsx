@@ -3,25 +3,34 @@
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { AnalogCluster } from "@/components/AnalogCluster";
 import { CameraView } from "@/components/CameraView";
-import { ConnectionModal } from "@/components/ConnectionModal";
-import { DriveModeSwitch, type DriveModeId } from "@/components/DriveModeSwitch";
+import { LinkSettingsModal } from "@/components/LinkSettingsModal";
 import { MotorPanel } from "@/components/MotorPanel";
 import { SteeringWheel } from "@/components/SteeringWheel";
-import { useCarConnection } from "@/hooks/useCarConnection";
 import { useCarSocket } from "@/hooks/useCarSocket";
-import { loadDebugUi, saveDebugUi } from "@/lib/carApi";
 import {
-  loadDriveMode,
+  AP_HOST,
+  DEFAULT_WS_URL,
   MOTOR_MAX,
-  saveDriveMode,
   SERVO_CENTER,
+  hostToHttpBase,
+  hostToWsUrl,
+  loadCarHost,
+  loadLinkMode,
+  loadStoredWsUrl,
+  saveCarHost,
+  saveLinkMode,
+  saveStoredWsUrl,
   wheelDegToServo,
+  type LinkMode,
 } from "@/lib/protocol";
 
 export function Cockpit() {
-  const conn = useCarConnection();
+  const [debug, setDebug] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [debugUi, setDebugUi] = useState(false);
+  const [mode, setMode] = useState<LinkMode>("hotspot");
+  const [host, setHost] = useState("");
+  const [wsUrl, setWsUrl] = useState("");
+  const [linkEnabled, setLinkEnabled] = useState(false);
   const [wheelDeg, setWheelDeg] = useState(0);
   const [servoAngle, setServoAngle] = useState(SERVO_CENTER);
   const [left, setLeft] = useState(0);
@@ -32,78 +41,78 @@ export function Cockpit() {
   const [usbPower, setUsbPower] = useState(false);
   const [charging, setCharging] = useState(false);
   const [chargeFull, setChargeFull] = useState(false);
-  const [driveMode, setDriveMode] = useState<DriveModeId>("NORMAL");
   const animRef = useRef<number | null>(null);
 
-  const ready = conn.phase === "ready";
-
   useEffect(() => {
-    setDriveMode(loadDriveMode());
-    setDebugUi(loadDebugUi());
+    const m = loadLinkMode();
+    const h = loadCarHost();
+    const stored = loadStoredWsUrl();
+    setMode(m);
+    setHost(h);
+    if (stored) {
+      setWsUrl(stored);
+      setLinkEnabled(true);
+    }
   }, []);
-
-  const changeDebugUi = (on: boolean) => {
-    setDebugUi(on);
-    saveDebugUi(on);
-  };
-
-  // Auto-open when we need the user; auto-close once linked
-  useEffect(() => {
-    if (conn.phase === "ready") {
-      setSettingsOpen(false);
-      return;
-    }
-    if (conn.phase !== "idle") {
-      setSettingsOpen(true);
-    }
-  }, [conn.phase]);
 
   const {
     state: wsState,
     lastAck,
+    telemetry,
     sendSteer,
     sendCenter,
     sendDrive: sendDriveWs,
     sendStop: sendStopWs,
     sendLights: sendLightsWs,
-    sendMode,
   } = useCarSocket({
-    url: conn.wsUrl || "ws://0.0.0.0:81",
-    enabled: ready && Boolean(conn.wsUrl),
-    onTelemetry: (msg) => {
-      if (typeof msg.batt === "number") {
-        setBatteryPct(Math.max(0, Math.min(100, Math.round(msg.batt))));
-      }
-      if (typeof msg.usb === "boolean") setUsbPower(msg.usb);
-      if (typeof msg.charging === "boolean") setCharging(msg.charging);
-      if (typeof msg.full === "boolean") setChargeFull(msg.full);
-      if (typeof msg.mode === "string") {
-        const m = String(msg.mode).toUpperCase();
-        if (m === "NORMAL" || m === "SPORT" || m === "CRAWL") {
-          setDriveMode(m);
-          saveDriveMode(m);
-        }
-      }
-    },
+    url: wsUrl || DEFAULT_WS_URL,
+    enabled: linkEnabled && Boolean(wsUrl),
   });
 
-  const canDrive = ready && wsState === "open";
+  const linked = wsState === "open";
+  const canDrive = linked;
+  const httpBase = hostToHttpBase(
+    mode === "hotspot" ? AP_HOST : host || wsUrl.replace(/^ws:\/\//, ""),
+  );
+  const streamUrl = `${httpBase}/jpg`;
 
   useEffect(() => {
-    if (!canDrive) return;
-    sendMode(driveMode);
-  }, [canDrive, driveMode, sendMode]);
+    if (typeof telemetry.batt === "number") {
+      setBatteryPct(Math.max(0, Math.min(100, Math.round(telemetry.batt))));
+    }
+    if (typeof telemetry.usb === "boolean") setUsbPower(telemetry.usb);
+    if (typeof telemetry.charging === "boolean") setCharging(telemetry.charging);
+    if (typeof telemetry.full === "boolean") setChargeFull(telemetry.full);
+  }, [telemetry]);
 
-  const changeDriveMode = (m: DriveModeId) => {
-    setDriveMode(m);
-    saveDriveMode(m);
-    if (canDrive) sendMode(m);
+  const connectHotspot = () => {
+    const url = DEFAULT_WS_URL;
+    setMode("hotspot");
+    saveLinkMode("hotspot");
+    setWsUrl(url);
+    saveStoredWsUrl(url);
+    setLinkEnabled(true);
+  };
+
+  const connectHome = (h: string) => {
+    const url = hostToWsUrl(h);
+    setMode("home");
+    saveLinkMode("home");
+    setHost(h);
+    saveCarHost(h);
+    setWsUrl(url);
+    saveStoredWsUrl(url);
+    setLinkEnabled(true);
+  };
+
+  const disconnect = () => {
+    setLinkEnabled(false);
   };
 
   const sendDrive = (l: number, r: number) => {
     setLeft(l);
     setRight(r);
-    if (canDrive) sendDriveWs(l, r);
+    sendDriveWs(l, r);
   };
 
   const sendStop = () => {
@@ -111,13 +120,13 @@ export function Cockpit() {
     setRight(0);
     setWheelDeg(0);
     setServoAngle(SERVO_CENTER);
-    if (canDrive) sendStopWs();
+    sendStopWs();
   };
 
   const toggleLights = () => {
     const next = !lightsOn;
     setLightsOn(next);
-    if (canDrive) sendLightsWs(next);
+    sendLightsWs(next);
   };
 
   const applyWheel = (deg: number) => {
@@ -128,7 +137,7 @@ export function Cockpit() {
     setWheelDeg(deg);
     const angle = wheelDegToServo(deg);
     setServoAngle(angle);
-    if (canDrive) sendSteer(angle);
+    sendSteer(angle);
   };
 
   const autoCenter = () => {
@@ -144,14 +153,14 @@ export function Cockpit() {
       setWheelDeg(deg);
       const angle = wheelDegToServo(deg);
       setServoAngle(angle);
-      if (canDrive) sendSteer(angle);
+      sendSteer(angle);
       if (t < 1) {
         animRef.current = requestAnimationFrame(tick);
       } else {
         animRef.current = null;
         setWheelDeg(0);
         setServoAngle(SERVO_CENTER);
-        if (canDrive) sendCenter();
+        sendCenter();
       }
     };
     animRef.current = requestAnimationFrame(tick);
@@ -187,6 +196,9 @@ export function Cockpit() {
       (Math.max(Math.abs(left), Math.abs(right)) / MOTOR_MAX) * 7.5 * 10,
     ) / 10;
 
+  const wifiLabel =
+    mode === "hotspot" ? `${AP_HOST}:81` : host ? `${host}` : wsUrl;
+
   return (
     <div className="cockpit cockpit-graph relative flex h-dvh max-h-dvh flex-col overflow-hidden text-white">
       <header className="pointer-events-none absolute inset-x-0 top-0 z-20 flex items-start justify-start px-3 pt-2 sm:px-4">
@@ -204,47 +216,33 @@ export function Cockpit() {
         </div>
       </header>
 
-      <ConnectionModal
+      <LinkSettingsModal
         open={settingsOpen}
         onClose={() => setSettingsOpen(false)}
-        phase={conn.phase}
-        linkPath={conn.linkPath}
-        message={conn.message}
-        error={conn.error}
-        homeSsid={conn.homeSsid}
-        homeLanIp={conn.homeLanIp}
-        httpsApp={conn.httpsApp}
-        setupApSsid={conn.setupApSsid}
-        directApSsid={conn.directApSsid}
-        espIp={conn.espIp}
-        videoQuality={conn.videoQuality}
-        onVideoQuality={conn.setVideoQuality}
-        debugUi={debugUi}
-        onDebugUi={changeDebugUi}
-        onRetry={() => void conn.probe()}
-        onRetryDirect={() => void conn.probeDirect()}
-        onProbeIp={(ip) => void conn.probeIp(ip)}
-        onOpenSetup={conn.openSetup}
-        onSubmitWifi={conn.submitWifi}
-        onDisconnect={conn.disconnect}
-        onDisconnectCarHome={conn.disconnectCarHome}
-        onForgetCarHome={conn.forgetCarHome}
-        initialSsid={conn.homeSsid}
+        mode={mode}
+        host={host}
+        wsState={wsState}
+        linked={linked}
+        debug={debug}
+        onDebugChange={setDebug}
+        onConnectHotspot={connectHotspot}
+        onConnectHome={connectHome}
+        onDisconnect={disconnect}
       />
 
       <main className="cockpit-layout relative z-10 grid min-h-0 flex-1 gap-0 p-0">
         <section className="cockpit-windscreen flex min-h-0 items-stretch justify-center">
           <CameraView
-            streamUrl={conn.streamUrl}
-            wifiReady={ready}
-            pollMs={conn.videoPollMs}
+            streamUrl={streamUrl}
+            cameraEnabled={linked}
+            debug={debug}
             left={left}
             right={right}
             wheelDeg={wheelDeg}
             linkState={wsState}
-            wifiLabel={conn.linkLabel || conn.wsUrl || undefined}
+            mode={mode}
+            wifiLabel={wifiLabel}
             lastAck={lastAck}
-            debug={debugUi}
             onOpenLink={() => setSettingsOpen(true)}
           />
 
@@ -279,7 +277,6 @@ export function Cockpit() {
                 wheelDeg={wheelDeg}
                 onWheelDeg={applyWheel}
                 onRelease={autoCenter}
-                debug={debugUi}
               />
             </div>
           </div>
@@ -292,11 +289,6 @@ export function Cockpit() {
               usb={usbPower}
               charging={charging}
               full={chargeFull}
-            />
-            <DriveModeSwitch
-              mode={driveMode}
-              onChange={changeDriveMode}
-              disabled={!canDrive}
             />
           </div>
 

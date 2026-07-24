@@ -4,119 +4,74 @@
 #include "battery_monitor.h"
 #include "camera_stream.h"
 #include "config.h"
-#include "drive_pump.h"
-#include "driving_mode.h"
 #include "motor_control.h"
 #include "ota_update.h"
 #include "servo_control.h"
-#include "setup_server.h"
 #include "websocket_control.h"
-#include "wifi_manager.h"
+#include "wifi_control.h"
 
 ServoControl servo;
 MotorControl motors;
-WifiManager wifi;
-SetupServer http;
+WifiControl wifi;
 WebsocketControl websocket;
 CameraStream camera;
 BatteryMonitor battery;
 OtaUpdate ota;
-DrivingModeManager driveModes;
 
-static bool servicesStarted = false;
-
-static void pumpDriveServices() {
-  static bool busy = false;
-  if (busy) {
-    yield();
-    return;
-  }
-  busy = true;
-  websocket.loop();
-  driveModes.loop(); // motor/servo ramp while camera writes
-  busy = false;
-}
-
-static void startDriveServices() {
-  if (!websocket.isRunning()) {
-    websocket.begin(&servo, &motors, &driveModes);
-  } else {
-    websocket.rebind();
-  }
-  if (wifi.isStaConnected() && wifi.isHomeMode()) {
-    ota.begin();
-  }
-  servicesStarted = true;
-  Serial.printf("[ready] drive services (%s)\n",
-                wifi.isHomeMode() ? "home" : "direct");
-}
-
-static void onNetworkReady() {
-  if (http.isRunning()) http.rebind();
-  if (wifi.isDriveReady() || wifi.isApActive()) {
-    startDriveServices();
-  }
-}
+static uint32_t gLastBattBroadcastMs = 0;
+static uint32_t gCamStartMs = 0;
+static bool gCamStarted = false;
 
 void setup() {
   Serial.begin(115200);
-  delay(800);
+  delay(600);
   Serial.println();
-  Serial.println("=== RC-Car: drive modes + drive-first Wi-Fi ===");
-
-  setDrivePump(pumpDriveServices);
-
-  wifi.begin(
-      [](const String &json) {
-        Serial.printf("[wifi-status] %s\n", json.c_str());
-        if (json.indexOf("\"status\":\"connected\"") >= 0 &&
-            (json.indexOf("\"mode\":\"direct\"") >= 0 ||
-             json.indexOf("\"mode\":\"home\"") >= 0)) {
-          startDriveServices();
-        }
-      },
-      onNetworkReady);
-
-  wifi.bootSoftAp();
-  delay(300);
+  Serial.println("=== RC-Car: SoftAP drive + optional home Wi‑Fi ===");
+  Serial.println("[prio] 1) stay linked  2) motors/servo  3) camera");
 
   motors.begin();
   servo.begin();
 
-  if (!camera.begin()) {
-    Serial.println("[cam] unavailable — drive still works");
-  }
+  // SoftAP + HTTP status first — drive path before camera
+  wifi.begin(&battery, &camera);
+  websocket.begin(&servo, &motors);
 
-  driveModes.begin(&motors, &servo, &camera, &battery);
+  battery.begin([](const String &json) {
+    // Push battery over WS when someone is linked
+    websocket.broadcast(json);
+  });
 
-  http.begin(&wifi, &camera, &battery);
+  gCamStartMs = millis();
 
-  wifi.setNetworkNotifyEnabled(true);
-  wifi.notifyNetworkNow();
-
-  battery.begin([](const String &json) { websocket.broadcast(json); });
-
-  delay(100);
-  wifi.trySavedOrFallback();
-
-  Serial.printf("[boot] hotspot \"%s\" / %s → http://192.168.4.1/\n", AP_SSID,
-                AP_PASS);
+  Serial.printf("[ready] Join SoftAP \"%s\" / %s\n", AP_SSID, AP_PASS);
+  Serial.printf("[ready] Control  ws://%s:%u\n", WiFi.softAPIP().toString().c_str(),
+                WS_PORT);
+  Serial.printf("[ready] Debug    http://%s/\n", WiFi.softAPIP().toString().c_str());
 }
 
 void loop() {
-  // Priority 1: steering / motors / watchdog / mode ramps
+  // Control path first
   websocket.loop();
-  driveModes.loop();
-
-  // Priority 2: battery / network
-  battery.loop();
   wifi.loop();
+  battery.loop();
+  ota.loop();
 
-  // Priority 3: HTTP camera / provision
-  http.loop();
+  // Camera last — init after ~2s so SoftAP/WS settle
+  if (!gCamStarted && millis() - gCamStartMs > 2000) {
+    gCamStarted = true;
+    if (!camera.begin()) {
+      Serial.println("[cam] unavailable — drive still works");
+    }
+  }
+  camera.loop();
 
-  if (wifi.isStaConnected()) ota.loop();
-  if (!servicesStarted && wifi.isApActive()) {
-    startDriveServices();
+  if (wifi.homeConnected() && !ota.isReady()) {
+    ota.begin();
+  }
+
+  // Soft heartbeat if no battery change
+  if (millis() - gLastBattBroadcastMs > 5000) {
+    gLastBattBroadcastMs = millis();
+    websocket.broadcast(battery.statusJson());
   }
 }
