@@ -4,33 +4,31 @@
 #include <functional>
 
 /**
- * Wi‑Fi modes (one SoftAP SSID always: Porsche_RC_Car):
- *   home   — STA on saved router (OTA allowed)
- *   setup  — SoftAP + provision portal (no saved Wi‑Fi yet)
- *   direct — SoftAP fully drivable (no router / STA failed)
+ * Clean Wi‑Fi policy:
+ *   direct — SoftAP only (WIFI_AP). Drive at 192.168.4.1. No STA scan.
+ *   setup  — SoftAP; waiting for / providing home credentials.
+ *   home   — STA on router (+ SoftAP kept for fallback when idle).
+ *
+ * Home join never starts while SoftAP has connected clients.
  */
 enum class WifiPhase : uint8_t {
   Boot,
-  TryingSaved,
+  DirectAp,
   SetupAp,
+  PendingHome,   // creds saved; waiting for SoftAP idle then STA
   ConnectingSta,
-  ConnectedHoldAp,
-  Connected, // Home Mode
-  DirectAp,  // Direct Mode
+  Connected,     // Home Mode
 };
 
 class WifiManager {
 public:
   using StatusFn = std::function<void(const String &json)>;
-  /** Fired after SoftAP / STA is up — rebind HTTP & WS (only when enabled). */
   using NetworkFn = std::function<void()>;
 
   void begin(StatusFn onStatus, NetworkFn onNetwork = nullptr);
   void loop();
 
-  /** Must run BEFORE WebServer/WebSocket — initializes lwIP SoftAP. */
   void bootSoftAp();
-  /** After HTTP is listening: try saved STA or stay Direct/Setup. */
   void trySavedOrFallback();
   void setNetworkNotifyEnabled(bool enabled) { _notifyEnabled = enabled; }
   void notifyNetworkNow() { notifyNetwork(); }
@@ -41,33 +39,27 @@ public:
 
   void connectAndSave(const String &ssid, const String &pass);
   void forgetSaved();
-  /** Drop STA / home Wi‑Fi; SoftAP stays up. Creds kept. */
   void disconnectSta();
 
   bool hasSavedSsid() const;
   bool isStaConnected() const;
   bool isApActive() const { return _apActive; }
   bool isDirectMode() const {
-    return _phase == WifiPhase::DirectAp ||
-           (_phase == WifiPhase::TryingSaved && _apActive);
+    return _phase == WifiPhase::DirectAp || _phase == WifiPhase::PendingHome;
   }
   bool isSetupMode() const {
-    return _phase == WifiPhase::SetupAp || _phase == WifiPhase::ConnectingSta ||
-           _phase == WifiPhase::ConnectedHoldAp;
+    return _phase == WifiPhase::SetupAp || _phase == WifiPhase::ConnectingSta;
   }
-  bool isHomeMode() const {
-    return _phase == WifiPhase::Connected ||
-           (_phase == WifiPhase::ConnectedHoldAp && isStaConnected());
-  }
+  bool isHomeMode() const { return _phase == WifiPhase::Connected && isStaConnected(); }
   bool isDriveReady() const {
-    return isStaConnected() || _phase == WifiPhase::DirectAp ||
-           (_phase == WifiPhase::TryingSaved && _apActive);
+    return _apActive || isStaConnected();
   }
 
   WifiPhase phase() const { return _phase; }
   String controlIp() const;
   String homeSsid() const { return _ssid; }
   String statusJson() const;
+  int softApClients() const;
 
 private:
   StatusFn _onStatus;
@@ -76,12 +68,12 @@ private:
   bool _apActive = false;
   bool _connecting = false;
   bool _notifyEnabled = false;
+  bool _wantHome = false; // saved/explicit home join when SoftAP idle
   const char *_apSsid = nullptr;
   uint32_t _phaseStartedMs = 0;
   uint32_t _attemptStartedMs = 0;
-  uint32_t _apHoldUntilMs = 0;
-  uint32_t _deferStaUntilMs = 0; // SoftAP-first: delay home Wi‑Fi try
-  uint32_t _softApUpMs = 0;
+  uint32_t _softApIdleSinceMs = 0;
+  uint32_t _lastStaTryMs = 0;
   uint8_t _connectAttempt = 0;
   uint8_t _apChannel = 6;
   String _ssid;
@@ -97,8 +89,8 @@ private:
   void onStaFailed(const String &error);
   void enterSetup(const char *reason);
   void enterDirect(const char *reason);
-  void startSoftAp(const char *ssid, const char *pass, bool apSta);
+  void startSoftAp(bool apSta);
   void ensureSoftAp(bool apSta);
-  void beginDeferredStaTry();
   bool softApHealthy() const;
+  void maybeStartHomeJoin(uint32_t now);
 };

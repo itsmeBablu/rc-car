@@ -26,6 +26,7 @@ type Props = {
   onVideoQuality: (q: VideoQuality) => void | Promise<void>;
   debugUi: boolean;
   onDebugUi: (on: boolean) => void;
+  driveLinkState?: "idle" | "connecting" | "open" | "closed" | "error";
   onRetry: () => void;
   onRetryDirect: () => void;
   onProbeIp?: (ip: string) => void | Promise<void>;
@@ -53,6 +54,7 @@ export function ConnectionModal({
   onVideoQuality,
   debugUi,
   onDebugUi,
+  driveLinkState = "idle",
   onRetry,
   onRetryDirect,
   onProbeIp,
@@ -334,8 +336,21 @@ export function ConnectionModal({
               drop first if the car is busy.
             </p>
 
-            <button type="button" onClick={onClose} className="conn-btn conn-btn-primary">
-              Drive
+            {driveLinkState !== "open" ? (
+              <p className="conn-status">
+                {driveLinkState === "connecting" || driveLinkState === "idle"
+                  ? "Opening drive link (WebSocket)…"
+                  : "Drive link closed — reconnecting…"}
+              </p>
+            ) : null}
+
+            <button
+              type="button"
+              onClick={onClose}
+              className="conn-btn conn-btn-primary"
+              disabled={driveLinkState !== "open"}
+            >
+              {driveLinkState === "open" ? "Drive" : "Wait for drive link…"}
             </button>
 
             <div className="conn-video" ref={videoRef}>

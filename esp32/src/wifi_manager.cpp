@@ -49,10 +49,13 @@ void WifiManager::begin(StatusFn onStatus, NetworkFn onNetwork) {
 
 bool WifiManager::softApHealthy() const {
   if (!_apActive) return false;
-  const IPAddress ip = WiFi.softAPIP();
-  if (ip == IPAddress((uint32_t)0)) return false;
+  if (WiFi.softAPIP() == IPAddress((uint32_t)0)) return false;
   const wifi_mode_t m = WiFi.getMode();
   return m == WIFI_AP || m == WIFI_AP_STA;
+}
+
+int WifiManager::softApClients() const {
+  return _apActive ? (int)WiFi.softAPgetStationNum() : 0;
 }
 
 void WifiManager::notifyNetwork() {
@@ -71,6 +74,8 @@ bool WifiManager::isStaConnected() const {
 }
 
 String WifiManager::controlIp() const {
+  // SoftAP clients can only reach 192.168.4.1
+  if (_apActive && softApClients() > 0) return WiFi.softAPIP().toString();
   if (isStaConnected()) return WiFi.localIP().toString();
   if (_apActive) return WiFi.softAPIP().toString();
   return "";
@@ -84,54 +89,57 @@ void WifiManager::emitStatus() {
 
 String WifiManager::statusJson() const {
   JsonDocument doc;
+  const String apIp = _apActive ? WiFi.softAPIP().toString() : String("");
+  const String staIp = isStaConnected() ? WiFi.localIP().toString() : String("");
+  const int apClients = softApClients();
   const String ip = controlIp();
 
-  if (isStaConnected() &&
-      (_phase == WifiPhase::Connected || _phase == WifiPhase::ConnectedHoldAp)) {
+  if (isHomeMode() && apClients == 0) {
     doc["mode"] = "home";
     doc["status"] = "connected";
     doc["wifi"] = "connected";
-  } else if (_phase == WifiPhase::DirectAp ||
-             (_phase == WifiPhase::TryingSaved && _apActive)) {
-    doc["mode"] = "direct";
-    doc["status"] = "connected";
-    doc["wifi"] = "direct";
-    if (_connecting) doc["sta"] = "connecting";
-  } else if (_connecting) {
-    doc["mode"] = "setup";
-    doc["status"] = "connecting";
-    doc["wifi"] = "connecting";
-    doc["attempt"] = _connectAttempt;
-  } else if (_phase == WifiPhase::SetupAp || _phase == WifiPhase::ConnectedHoldAp) {
-    doc["mode"] = "setup";
-    doc["status"] = "setup";
-    doc["wifi"] = "setup";
   } else if (_apActive) {
     doc["mode"] = "direct";
     doc["status"] = "connected";
     doc["wifi"] = "direct";
+    if (isHomeMode()) doc["homeAlso"] = true;
+  } else if (_connecting) {
+    doc["mode"] = "setup";
+    doc["status"] = "connecting";
+    doc["wifi"] = "connecting";
+  } else if (_phase == WifiPhase::SetupAp || _phase == WifiPhase::PendingHome) {
+    doc["mode"] = "setup";
+    doc["status"] = _phase == WifiPhase::PendingHome ? "pending_home" : "setup";
+    doc["wifi"] = "setup";
   } else {
     doc["mode"] = "home";
     doc["status"] = "disconnected";
     doc["wifi"] = "disconnected";
   }
 
+  if (_connecting) {
+    doc["status"] = "connecting";
+    doc["wifi"] = "connecting";
+    doc["attempt"] = _connectAttempt;
+  }
+
   doc["phase"] = static_cast<int>(_phase);
   doc["message"] = _message;
   doc["ap"] = _apActive;
+  doc["apClients"] = apClients;
+  doc["wantHome"] = _wantHome;
   if (_apActive) {
     doc["apSsid"] = AP_SSID;
-    doc["apIp"] = WiFi.softAPIP().toString();
+    if (apIp.length()) doc["apIp"] = apIp;
   }
-  // Always expose STA address separately so the phone can save it for Home Mode
-  if (isStaConnected()) {
-    doc["staIp"] = WiFi.localIP().toString();
+  if (staIp.length()) {
+    doc["staIp"] = staIp;
     doc["ssid"] = WiFi.SSID();
   }
   if (ip.length()) {
     doc["ip"] = ip;
     doc["ws"] = String("ws://") + ip + ":" + String(WS_PORT);
-    doc["stream"] = String("http://") + ip + "/stream";
+    doc["stream"] = String("http://") + ip + "/jpg";
     doc["jpg"] = String("http://") + ip + "/jpg";
     doc["battery"] = String("http://") + ip + "/api/battery";
   }
@@ -142,114 +150,85 @@ String WifiManager::statusJson() const {
   return out;
 }
 
-/** Start / re-assert SoftAP. Prefer not to drop phones mid-join. */
-void WifiManager::startSoftAp(const char *ssid, const char *pass, bool apSta) {
+void WifiManager::startSoftAp(bool apSta) {
   const wifi_mode_t want = apSta ? WIFI_AP_STA : WIFI_AP;
-  const int stations = WiFi.softAPgetStationNum();
+  const int stations = softApClients();
   const wifi_mode_t cur = WiFi.getMode();
 
-  // SoftAP already healthy — avoid restart (kills "Connecting…" on phones/PCs)
+  // Never bounce SoftAP while clients are online
   if (softApHealthy()) {
-    if (cur == want) {
-      return;
-    }
-    // Upgrade AP → AP_STA without tearing down beacon if clients present
+    if (cur == want) return;
+
     if (want == WIFI_AP_STA && cur == WIFI_AP) {
-      Serial.printf("[wifi] SoftAP upgrade AP→AP_STA (clients=%d)\n", stations);
+      Serial.printf("[wifi] SoftAP → AP_STA (clients=%d)\n", stations);
       WiFi.mode(WIFI_AP_STA);
-      delay(80);
+      delay(50);
       esp_wifi_set_ps(WIFI_PS_NONE);
       if (!softApHealthy()) {
         WiFi.softAPConfig(SETUP_AP_IP, SETUP_AP_GW, SETUP_AP_MASK);
-        WiFi.softAP(ssid, pass, _apChannel, 0, AP_MAX_CLIENTS);
+        WiFi.softAP(AP_SSID, AP_PASS, _apChannel, 0, AP_MAX_CLIENTS);
       }
       _apActive = softApHealthy();
-      notifyNetwork();
       return;
     }
-    // Downgrade AP_STA → AP only when no STA work and no clients disruption needed
-    if (want == WIFI_AP && cur == WIFI_AP_STA && !isStaConnected() &&
-        !_connecting) {
-      if (stations > 0) {
-        Serial.println("[wifi] SoftAP keep AP_STA — clients online");
-        return;
-      }
-    }
+
     if (stations > 0) {
-      Serial.printf("[wifi] SoftAP skip restart (clients=%d mode=%d want=%d)\n",
-                    stations, (int)cur, (int)want);
+      Serial.printf("[wifi] SoftAP keep mode=%d (clients=%d)\n", (int)cur,
+                    stations);
       return;
     }
   }
 
-  Serial.printf("[wifi] SoftAP start \"%s\" want=%s ch=%u\n", ssid,
-                apSta ? "AP_STA" : "AP", (unsigned)_apChannel);
+  Serial.printf("[wifi] SoftAP start want=%s ch=%u\n", apSta ? "AP_STA" : "AP",
+                (unsigned)_apChannel);
 
   WiFi.mode(want);
-  delay(120);
+  delay(100);
   esp_wifi_set_ps(WIFI_PS_NONE);
-  WiFi.setTxPower(WIFI_POWER_15dBm);
-
+  WiFi.setTxPower(WIFI_POWER_19_5dBm);
   WiFi.softAPConfig(SETUP_AP_IP, SETUP_AP_GW, SETUP_AP_MASK);
 
-  bool ok = WiFi.softAP(ssid, pass, _apChannel, 0, AP_MAX_CLIENTS);
+  bool ok = WiFi.softAP(AP_SSID, AP_PASS, _apChannel, 0, AP_MAX_CLIENTS);
   if (!ok) {
-    Serial.println("[wifi] softAP() false — retry channel 1");
-    delay(200);
+    delay(150);
     _apChannel = 1;
-    ok = WiFi.softAP(ssid, pass, _apChannel, 0, AP_MAX_CLIENTS);
-  }
-  if (!ok) {
-    Serial.println("[wifi] softAP() false — open then WPA2");
-    delay(200);
-    WiFi.softAP(ssid, nullptr, _apChannel, 0, AP_MAX_CLIENTS);
-    delay(80);
-    ok = WiFi.softAP(ssid, pass, _apChannel, 0, AP_MAX_CLIENTS);
+    ok = WiFi.softAP(AP_SSID, AP_PASS, _apChannel, 0, AP_MAX_CLIENTS);
   }
 
   _apActive = ok;
-  _apSsid = ssid;
-  if (ok) _softApUpMs = millis();
+  _apSsid = AP_SSID;
+  Serial.printf("[wifi] SoftAP %s ip=%s mode=%d\n", ok ? "OK" : "FAIL",
+                WiFi.softAPIP().toString().c_str(), (int)WiFi.getMode());
 
-  const IPAddress ip = WiFi.softAPIP();
-  Serial.printf("[wifi] SoftAP \"%s\" %s ip=%s mode=%d clients=%d\n", ssid,
-                ok ? "OK" : "FAIL", ip.toString().c_str(), (int)WiFi.getMode(),
-                WiFi.softAPgetStationNum());
-
-  if (!ok) {
-    Serial.println("[wifi] ERROR: SoftAP failed — hotspot will not appear");
-  } else {
-    notifyNetwork();
-  }
+  if (ok) notifyNetwork();
+  else Serial.println("[wifi] ERROR: SoftAP failed");
 }
 
 void WifiManager::ensureSoftAp(bool apSta) {
-  const bool needApSta = apSta || isStaConnected() || _connecting;
   if (!softApHealthy() || WiFi.getMode() == WIFI_STA ||
       WiFi.getMode() == WIFI_OFF) {
-    startSoftAp(AP_SSID, AP_PASS, needApSta);
+    startSoftAp(apSta);
     return;
   }
-  const wifi_mode_t want = needApSta ? WIFI_AP_STA : WIFI_AP;
-  if (WiFi.getMode() != want) {
-    startSoftAp(AP_SSID, AP_PASS, needApSta);
-  }
+  const wifi_mode_t want = apSta ? WIFI_AP_STA : WIFI_AP;
+  if (WiFi.getMode() != want) startSoftAp(apSta);
 }
 
 void WifiManager::bootSoftAp() {
-  Serial.println("[wifi] boot SoftAP (stable, SoftAP-first)…");
+  Serial.println("[wifi] boot SoftAP-only (Direct)");
   _apChannel = AP_CHANNEL;
-  startSoftAp(AP_SSID, AP_PASS, false);
+  startSoftAp(false); // WIFI_AP — no STA yet
   _phase = WifiPhase::DirectAp;
   _phaseStartedMs = millis();
   _connecting = false;
-  _deferStaUntilMs = 0;
-  setMessage("softap_up");
+  _wantHome = false;
+  _softApIdleSinceMs = millis();
+  setMessage("softap_ready");
   emitStatus();
 }
 
 void WifiManager::startSetupAp() {
-  startSoftAp(AP_SSID, AP_PASS, true);
+  startSoftAp(false);
   _phase = WifiPhase::SetupAp;
   _phaseStartedMs = millis();
   setMessage("setup_ready");
@@ -257,30 +236,30 @@ void WifiManager::startSetupAp() {
 }
 
 void WifiManager::startDirectAp() {
+  _connecting = false;
+  WiFi.setAutoReconnect(false);
   WiFi.disconnect(false, false);
-  delay(50);
-  startSoftAp(AP_SSID, AP_PASS, false);
+  delay(40);
+  startSoftAp(false);
   _phase = WifiPhase::DirectAp;
   _phaseStartedMs = millis();
-  _connecting = false;
   setMessage("direct_ready");
-  Serial.println("[wifi] Direct Mode — SoftAP drive ready");
+  Serial.println("[wifi] Direct Mode — SoftAP only");
   emitStatus();
 }
 
 void WifiManager::stopSoftAp() {
-  // SoftAP is permanent for this product — never tear it down.
   Serial.println("[wifi] stopSoftAp ignored (SoftAP always on)");
 }
 
 void WifiManager::enterSetup(const char *reason) {
-  Serial.printf("[wifi] → Setup Mode (%s)\n", reason);
+  Serial.printf("[wifi] → Setup (%s)\n", reason);
   setMessage(reason);
   startSetupAp();
 }
 
 void WifiManager::enterDirect(const char *reason) {
-  Serial.printf("[wifi] → Direct Mode (%s)\n", reason);
+  Serial.printf("[wifi] → Direct (%s)\n", reason);
   setMessage(reason);
   startDirectAp();
 }
@@ -295,47 +274,22 @@ void WifiManager::trySavedOrFallback() {
 
   if (_ssid.length() == 0) {
     _phase = WifiPhase::SetupAp;
-    _deferStaUntilMs = 0;
+    _wantHome = false;
     setMessage("no_saved_wifi");
     emitStatus();
     return;
   }
 
-  // SoftAP-first: stay Direct / drive-ready so phones can join smoothly.
-  // Home Wi‑Fi scan (AP+STA) is deferred — it makes SoftAP hang on "Connecting…".
-  _phase = WifiPhase::DirectAp;
+  // Keep SoftAP-only for Direct. Schedule home join only after SoftAP idle.
+  _wantHome = true;
+  _phase = WifiPhase::PendingHome;
   _connecting = false;
-  _deferStaUntilMs = millis() + SOFTAP_SETTLE_MS;
-  setMessage("softap_ready");
+  _softApIdleSinceMs = millis();
+  setMessage("softap_ready_home_pending");
   Serial.printf(
-      "[wifi] SoftAP first — home \"%s\" try in %u s (or when no clients)\n",
-      _ssid.c_str(), (unsigned)(SOFTAP_SETTLE_MS / 1000));
+      "[wifi] SoftAP Direct ready — home \"%s\" after SoftAP idle %us\n",
+      _ssid.c_str(), (unsigned)(SOFTAP_IDLE_BEFORE_STA_MS / 1000));
   emitStatus();
-}
-
-void WifiManager::beginDeferredStaTry() {
-  if (_ssid.length() == 0 || _connecting || isStaConnected()) {
-    _deferStaUntilMs = 0;
-    return;
-  }
-
-  const int stations = WiFi.softAPgetStationNum();
-  if (stations > 0) {
-    // Someone is on the hotspot — do not start STA scan (drops DHCP/auth).
-    _deferStaUntilMs = millis() + SOFTAP_CLIENT_DEFER_MS;
-    Serial.printf("[wifi] defer home Wi‑Fi — SoftAP clients=%d\n", stations);
-    return;
-  }
-
-  _deferStaUntilMs = 0;
-  Serial.printf("[wifi] SoftAP settled — trying home \"%s\"\n", _ssid.c_str());
-  ensureSoftAp(true);
-  _phase = WifiPhase::TryingSaved;
-  _phaseStartedMs = millis();
-  _connecting = true;
-  _connectAttempt = 0;
-  emitStatus();
-  beginStaAttempt();
 }
 
 void WifiManager::forgetSaved() {
@@ -344,7 +298,7 @@ void WifiManager::forgetSaved() {
   prefs.end();
   WiFi.disconnect(false, false);
   _connecting = false;
-  _deferStaUntilMs = 0;
+  _wantHome = false;
   _ssid = "";
   _pass = "";
   enterSetup("forgot");
@@ -352,13 +306,14 @@ void WifiManager::forgetSaved() {
 
 void WifiManager::disconnectSta() {
   _connecting = false;
-  _deferStaUntilMs = 0;
+  _wantHome = false;
+  WiFi.setAutoReconnect(false);
   WiFi.disconnect(false, false);
-  delay(50);
-  startSoftAp(AP_SSID, AP_PASS, false);
+  delay(40);
+  startSoftAp(false);
   _phase = WifiPhase::DirectAp;
   setMessage("sta_disconnected");
-  Serial.println("[wifi] STA disconnected — SoftAP only");
+  Serial.println("[wifi] STA dropped — SoftAP only");
   notifyNetwork();
   emitStatus();
 }
@@ -366,10 +321,10 @@ void WifiManager::disconnectSta() {
 void WifiManager::connectAndSave(const String &ssid, const String &pass) {
   _ssid = ssid;
   _pass = pass;
-  _connecting = true;
+  _wantHome = true;
+  _connecting = false;
   _connectAttempt = 0;
   _lastFailReason = 0;
-  _deferStaUntilMs = 0;
   gDisconnectReason = 0;
 
   prefs.begin("rc-car", false);
@@ -378,12 +333,45 @@ void WifiManager::connectAndSave(const String &ssid, const String &pass) {
   prefs.putBool("ok", false);
   prefs.end();
 
-  // Phone is already on SoftAP — upgrade gently, do not bounce beacon.
-  ensureSoftAp(true);
+  // Do NOT start STA while phone/PC is on SoftAP — kills DHCP/WS.
+  // Join after SoftAP clients leave.
+  startSoftAp(false);
+  _phase = WifiPhase::PendingHome;
+  _softApIdleSinceMs = 0; // force wait for idle window from next client drop
+  if (softApClients() == 0) _softApIdleSinceMs = millis();
+  setMessage("saved_leave_hotspot_for_home");
+  Serial.printf("[wifi] home creds saved \"%s\" — join after SoftAP idle\n",
+                ssid.c_str());
+  emitStatus();
+}
 
+void WifiManager::maybeStartHomeJoin(uint32_t now) {
+  if (!_wantHome || _connecting || isStaConnected() || _ssid.length() == 0)
+    return;
+
+  const int clients = softApClients();
+  if (clients > 0) {
+    _softApIdleSinceMs = 0;
+    return;
+  }
+
+  if (_softApIdleSinceMs == 0) {
+    _softApIdleSinceMs = now;
+    return;
+  }
+
+  if (now - _softApIdleSinceMs < SOFTAP_IDLE_BEFORE_STA_MS) return;
+  if (_lastStaTryMs && now - _lastStaTryMs < STA_IDLE_RETRY_MS &&
+      _phase != WifiPhase::PendingHome)
+    return;
+
+  _lastStaTryMs = now;
   _phase = WifiPhase::ConnectingSta;
-  _phaseStartedMs = millis();
+  _connecting = true;
+  _connectAttempt = 0;
   setMessage("Connecting...");
+  Serial.printf("[wifi] SoftAP idle — joining home \"%s\"\n", _ssid.c_str());
+  emitStatus();
   beginStaAttempt();
 }
 
@@ -392,35 +380,33 @@ void WifiManager::beginStaAttempt() {
   _attemptStartedMs = millis();
   gDisconnectReason = 0;
 
-  // During SoftAP client join, pause STA (radio busy → hang on Connecting…)
-  if (_phase == WifiPhase::TryingSaved && WiFi.softAPgetStationNum() > 0) {
-    Serial.println("[wifi] STA pause — SoftAP client present");
+  if (softApClients() > 0) {
+    Serial.println("[wifi] abort STA — SoftAP client present");
     _connecting = false;
-    _deferStaUntilMs = millis() + SOFTAP_CLIENT_DEFER_MS;
-    _phase = WifiPhase::DirectAp;
+    _phase = WifiPhase::PendingHome;
     setMessage("softap_busy");
+    startSoftAp(false);
     emitStatus();
     return;
   }
 
   if (_connectAttempt > 1) {
     setMessage(String("Retry ") + String(_connectAttempt - 1) + "...");
-  } else if (_message != "Connecting...") {
-    setMessage("Connecting...");
   }
 
-  ensureSoftAp(true);
+  ensureSoftAp(true); // AP_STA only when SoftAP is empty
   WiFi.setSleep(false);
   esp_wifi_set_ps(WIFI_PS_NONE);
+  WiFi.setAutoReconnect(true);
   WiFi.begin(_ssid.c_str(), _pass.c_str());
-  Serial.printf("[wifi] STA begin attempt %u ssid=\"%s\"\n",
+  Serial.printf("[wifi] STA attempt %u ssid=\"%s\"\n",
                 (unsigned)_connectAttempt, _ssid.c_str());
   emitStatus();
 }
 
 void WifiManager::onStaConnected() {
   _connecting = false;
-  _deferStaUntilMs = 0;
+  _wantHome = true;
   prefs.begin("rc-car", false);
   prefs.putBool("ok", true);
   prefs.end();
@@ -430,12 +416,11 @@ void WifiManager::onStaConnected() {
     MDNS.addService("ws", "tcp", WS_PORT);
   }
 
-  // Keep SoftAP forever — phone can always join Porsche_RC_Car
   ensureSoftAp(true);
   _phase = WifiPhase::Connected;
   setMessage("Connected");
-  Serial.printf("[wifi] Home Mode OK ip=%s (SoftAP still on, clients=%d)\n",
-                WiFi.localIP().toString().c_str(), WiFi.softAPgetStationNum());
+  Serial.printf("[wifi] Home OK ip=%s SoftAP clients=%d\n",
+                WiFi.localIP().toString().c_str(), softApClients());
   notifyNetwork();
   emitStatus();
 }
@@ -445,66 +430,53 @@ void WifiManager::onStaFailed(const String &error) {
   prefs.begin("rc-car", false);
   prefs.putBool("ok", false);
   prefs.end();
-
   setMessage(error);
   Serial.printf("[wifi] STA fail: %s\n", error.c_str());
 
-  if (_phase == WifiPhase::TryingSaved || !_apActive) {
-    enterDirect(error.c_str());
-  } else {
-    _phase = WifiPhase::SetupAp;
-    ensureSoftAp(false);
-    JsonDocument doc;
-    deserializeJson(doc, statusJson());
-    doc["status"] = "failed";
-    doc["wifi"] = "failed";
-    doc["error"] = error;
-    doc["message"] = error;
-    String out;
-    serializeJson(doc, out);
-    if (_onStatus) _onStatus(out);
-  }
+  // Stay SoftAP Direct; keep wanting home for later idle retry
+  startSoftAp(false);
+  _phase = _wantHome ? WifiPhase::PendingHome : WifiPhase::DirectAp;
+  JsonDocument doc;
+  deserializeJson(doc, statusJson());
+  doc["status"] = "failed";
+  doc["wifi"] = "failed";
+  doc["error"] = error;
+  doc["message"] = error;
+  String out;
+  serializeJson(doc, out);
+  if (_onStatus) _onStatus(out);
 }
 
 void WifiManager::loop() {
   const uint32_t now = millis();
   const wl_status_t st = WiFi.status();
 
-  // SoftAP-first: delayed home Wi‑Fi try
-  if (_deferStaUntilMs && now >= _deferStaUntilMs && !_connecting &&
-      !isStaConnected()) {
-    beginDeferredStaTry();
+  // Track SoftAP idle time
+  if (softApClients() == 0) {
+    if (_softApIdleSinceMs == 0) _softApIdleSinceMs = now;
+  } else {
+    _softApIdleSinceMs = 0;
   }
 
-  // SoftAP watchdog — never bounce while clients are joining/connected
+  // SoftAP health — never restart with clients
   static uint32_t lastApCheck = 0;
-  if (now - lastApCheck > 4000) {
+  if (now - lastApCheck > 5000) {
     lastApCheck = now;
-    const int stations = WiFi.softAPgetStationNum();
-    if (!softApHealthy()) {
-      if (stations > 0) {
-        Serial.println("[wifi] SoftAP unhealthy but has clients — gentle fix");
-        esp_wifi_set_ps(WIFI_PS_NONE);
-      } else {
-        Serial.println("[wifi] SoftAP missing — restarting");
-        ensureSoftAp(isStaConnected() || _connecting);
-      }
-    } else {
-      esp_wifi_set_ps(WIFI_PS_NONE);
+    esp_wifi_set_ps(WIFI_PS_NONE);
+    if (!softApHealthy() && softApClients() == 0) {
+      Serial.println("[wifi] SoftAP missing — restart AP-only");
+      startSoftAp(isStaConnected());
     }
   }
 
   if (_connecting) {
-    // If a phone just joined SoftAP mid-STA-scan, abort scan so DHCP works
-    if (_phase == WifiPhase::TryingSaved && WiFi.softAPgetStationNum() > 0 &&
-        st != WL_CONNECTED) {
-      Serial.println("[wifi] abort STA try — SoftAP client joined");
+    if (softApClients() > 0 && st != WL_CONNECTED) {
+      Serial.println("[wifi] SoftAP client during STA — back to SoftAP-only");
       WiFi.disconnect(false, false);
       _connecting = false;
-      _phase = WifiPhase::DirectAp;
-      _deferStaUntilMs = now + SOFTAP_CLIENT_DEFER_MS;
+      _phase = WifiPhase::PendingHome;
+      startSoftAp(false);
       setMessage("softap_busy");
-      ensureSoftAp(false);
       emitStatus();
       return;
     }
@@ -513,13 +485,10 @@ void WifiManager::loop() {
       onStaConnected();
       return;
     }
-    if (now - _attemptStartedMs >
-        (_phase == WifiPhase::TryingSaved ? STA_BOOT_TIMEOUT_MS
-                                          : STA_ATTEMPT_TIMEOUT_MS)) {
+
+    if (now - _attemptStartedMs > STA_ATTEMPT_TIMEOUT_MS) {
       _lastFailReason = gDisconnectReason;
-      const bool canRetry = _phase != WifiPhase::TryingSaved &&
-                            _connectAttempt < STA_CONNECT_MAX_ATTEMPTS;
-      if (canRetry) {
+      if (_connectAttempt < STA_CONNECT_MAX_ATTEMPTS) {
         beginStaAttempt();
       } else {
         const char *err =
@@ -535,8 +504,29 @@ void WifiManager::loop() {
     return;
   }
 
-  if (_phase == WifiPhase::Connected && st != WL_CONNECTED) {
-    Serial.println("[wifi] lost STA — Direct Mode (SoftAP)");
-    enterDirect("wifi_lost");
+  // SoftAP clients online while STA connected → SoftAP becomes flaky.
+  // Drop home STA for Direct drive; rejoin when SoftAP goes idle.
+  if (softApClients() > 0 && isStaConnected() && !_connecting) {
+    Serial.printf("[wifi] SoftAP clients=%d — drop STA for reliable Direct\n",
+                  softApClients());
+    WiFi.setAutoReconnect(false);
+    WiFi.disconnect(false, false);
+    delay(40);
+    startSoftAp(false); // WIFI_AP only
+    _wantHome = _ssid.length() > 0;
+    _phase = _wantHome ? WifiPhase::PendingHome : WifiPhase::DirectAp;
+    _connecting = false;
+    setMessage("direct_softap_only");
+    emitStatus();
+    return;
   }
+
+  if (_phase == WifiPhase::Connected && st != WL_CONNECTED) {
+    Serial.println("[wifi] lost home STA — SoftAP Direct");
+    enterDirect("wifi_lost");
+    _wantHome = _ssid.length() > 0;
+    if (_wantHome) _phase = WifiPhase::PendingHome;
+  }
+
+  maybeStartHomeJoin(now);
 }

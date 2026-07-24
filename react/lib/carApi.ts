@@ -120,6 +120,19 @@ export function statusUrl(ip: string) {
   return `http://${ip}/api/status`;
 }
 
+export function pingUrl(ip: string) {
+  return `http://${ip}/api/ping`;
+}
+
+/** Same-origin Next proxy — works when browser blocks direct SoftAP fetch. */
+export function carProxyStatusUrl(ip: string) {
+  return `/api/car/api/status?ip=${encodeURIComponent(ip)}`;
+}
+
+export function carProxyPingUrl(ip: string) {
+  return `/api/car/api/ping?ip=${encodeURIComponent(ip)}`;
+}
+
 export function wifiProvisionUrl(ip: string) {
   return `http://${ip}/api/wifi`;
 }
@@ -150,22 +163,46 @@ export async function fetchCarStatus(
   ip: string,
   timeoutMs = 2500,
 ): Promise<CarStatus | null> {
-  const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), timeoutMs);
-  try {
-    const res = await fetch(statusUrl(ip), {
-      method: "GET",
-      signal: ctrl.signal,
-      cache: "no-store",
-      mode: "cors",
-    });
-    if (!res.ok) return null;
-    return (await res.json()) as CarStatus;
-  } catch {
-    return null;
-  } finally {
-    clearTimeout(t);
+  const tryOnce = async (url: string): Promise<CarStatus | null> => {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), timeoutMs);
+    try {
+      const res = await fetch(url, {
+        method: "GET",
+        signal: ctrl.signal,
+        cache: "no-store",
+        mode: "cors",
+        credentials: "omit",
+      });
+      if (!res.ok) return null;
+      const data = (await res.json()) as CarStatus & { ok?: boolean; error?: string };
+      if (data && (data as { error?: string }).error && !(data.ap || data.ip || data.mode)) {
+        return null;
+      }
+      return data;
+    } catch {
+      return null;
+    } finally {
+      clearTimeout(t);
+    }
+  };
+
+  // 1) Direct SoftAP / LAN (works on http://localhost when CORS ok)
+  const direct = await tryOnce(statusUrl(ip));
+  if (direct) return direct;
+
+  // 2) Tiny ping then status again
+  await tryOnce(pingUrl(ip));
+  const again = await tryOnce(statusUrl(ip));
+  if (again) return again;
+
+  // 3) Same-origin Next.js proxy (Node on the PC talks to SoftAP)
+  if (typeof window !== "undefined" && !isHttpsApp()) {
+    const viaProxy = await tryOnce(carProxyStatusUrl(ip));
+    if (viaProxy) return viaProxy;
   }
+
+  return null;
 }
 
 /** Probe SoftAP repeatedly — DHCP often needs a few seconds after join. */
@@ -174,8 +211,8 @@ export async function fetchCarStatusRetry(
   opts?: { attempts?: number; timeoutMs?: number; gapMs?: number },
 ): Promise<CarStatus | null> {
   const attempts = opts?.attempts ?? 8;
-  const timeoutMs = opts?.timeoutMs ?? 2000;
-  const gapMs = opts?.gapMs ?? 700;
+  const timeoutMs = opts?.timeoutMs ?? 3000;
+  const gapMs = opts?.gapMs ?? 500;
   for (let i = 0; i < attempts; i++) {
     const s = await fetchCarStatus(ip, timeoutMs);
     if (s) return s;
@@ -229,7 +266,15 @@ export function isDirectSoftAp(s: CarStatus | null): boolean {
 
 export function isDriveReadyStatus(s: CarStatus | null): boolean {
   if (!s) return false;
-  if (isDirectSoftAp(s)) return true;
-  if (s.mode === "home" && s.status === "connected" && s.ip) return true;
-  return (s.status === "connected" || s.wifi === "connected") && Boolean(s.ip);
+  // Any reachable SoftAP / drive-ready payload
+  if (s.ap || s.apIp || isDirectSoftAp(s)) return true;
+  if (s.mode === "home" && (s.status === "connected" || s.wifi === "connected")) {
+    return Boolean(s.ip || s.staIp);
+  }
+  if (s.status === "connected" || s.wifi === "connected" || s.wifi === "direct") {
+    return Boolean(s.ip || s.staIp || s.apIp);
+  }
+  // Status endpoint answered — treat as reachable for Try IP
+  if (s.ip || s.staIp || s.ws) return true;
+  return false;
 }

@@ -119,13 +119,15 @@ void WebsocketControl::handleMessage(uint8_t num, const char *msg) {
     return;
   }
 
-  // Driving mode: {"mode":"SPORT"} (also accept cmd)
-  if (doc["mode"].is<const char *>() ||
-      (doc["cmd"].is<const char *>() && strcmp(doc["cmd"] | "", "mode") == 0)) {
-    const char *modeStr = doc["mode"] | "";
-    if (!modeStr[0] && doc["value"].is<const char *>())
-      modeStr = doc["value"] | "";
-    if (_modes && _modes->setMode(String(modeStr))) {
+  // Driving mode: {"mode":"SPORT"} or {"cmd":"mode","value":"SPORT"}
+  const bool modeCmd =
+      !doc["mode"].isNull() ||
+      (doc["cmd"].is<const char *>() && strcmp(doc["cmd"] | "", "mode") == 0);
+  if (modeCmd) {
+    String modeStr = doc["mode"] | "";
+    if (!modeStr.length()) modeStr = doc["value"] | "";
+    modeStr.trim();
+    if (_modes && _modes->setMode(modeStr)) {
       _lastCmdMs = millis();
       String out = "{\"ok\":true,\"mode\":\"";
       out += driveModeName(_modes->mode());

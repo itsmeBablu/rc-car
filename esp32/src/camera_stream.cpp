@@ -187,7 +187,14 @@ void handleJpg() {
     return;
   }
 
-  const uint32_t minGap = gCam->frameIntervalMs();
+  pumpDrive();
+
+  // SoftAP bandwidth is tiny — prefer drive over frames when clients present
+  uint32_t minGap = gCam->frameIntervalMs();
+  if (WiFi.softAPgetStationNum() > 0) {
+    if (minGap < 280) minGap = 280;
+  }
+
   const uint32_t now = millis();
   if (now - gCam->_lastServeMs < minGap) {
     sendCors();
@@ -235,63 +242,10 @@ void handleJpg() {
 }
 
 void handleStream() {
-  if (!gHttp || !gCam || !gCam->isReady()) return;
-
-  WiFiClient client = gHttp->client();
-  client.println("HTTP/1.1 200 OK");
-  client.println("Access-Control-Allow-Origin: *");
-  client.println("Content-Type: multipart/x-mixed-replace; boundary=frame");
-  client.println("Cache-Control: no-cache, no-store");
-  client.println("Pragma: no-cache");
-  client.println("Connection: close");
-  client.println();
-
-  uint32_t lastMs = 0;
-  while (client.connected()) {
-    pumpDrive();
-
-    const uint32_t minGap = gCam->frameIntervalMs();
-    uint32_t now = millis();
-    if (now - lastMs < minGap) {
-      delay(1);
-      pumpDrive();
-      continue;
-    }
-
-    gCam->_busy = true;
-    const uint32_t t0 = millis();
-    camera_fb_t *fb = esp_camera_fb_get();
-    if (!fb) {
-      gCam->_busy = false;
-      delay(5);
-      pumpDrive();
-      continue;
-    }
-
-    client.printf(
-        "--frame\r\nContent-Type: image/jpeg\r\nContent-Length: %u\r\n\r\n",
-        fb->len);
-
-    size_t wrote = 0;
-    const size_t chunk = 1024;
-    while (wrote < fb->len && client.connected()) {
-      size_t n = fb->len - wrote;
-      if (n > chunk) n = chunk;
-      size_t w = client.write(fb->buf + wrote, n);
-      if (w == 0) break;
-      wrote += w;
-      pumpDrive();
-    }
-    client.print("\r\n");
-    esp_camera_fb_return(fb);
-
-    lastMs = millis();
-    gCam->_lastServeMs = lastMs;
-    gCam->adaptAuto(lastMs - t0);
-    gCam->_busy = false;
-
-    if (wrote == 0) break;
-  }
+  // Never block the drive loop with multipart streaming on SoftAP.
+  if (!gHttp) return;
+  sendCors();
+  gHttp->send(503, "text/plain", "use_/jpg");
 }
 
 bool CameraStream::begin() {

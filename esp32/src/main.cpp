@@ -24,6 +24,7 @@ OtaUpdate ota;
 DrivingModeManager driveModes;
 
 static bool servicesStarted = false;
+static bool cameraStarted = false;
 
 static void pumpDriveServices() {
   static bool busy = false;
@@ -33,90 +34,90 @@ static void pumpDriveServices() {
   }
   busy = true;
   websocket.loop();
-  driveModes.loop(); // motor/servo ramp while camera writes
+  driveModes.loop();
   busy = false;
 }
 
-static void startDriveServices() {
+/** Start WS once — never rebind unless SoftAP was fully restarted. */
+static void startDriveServices(bool forceRebind = false) {
   if (!websocket.isRunning()) {
     websocket.begin(&servo, &motors, &driveModes);
-  } else {
+  } else if (forceRebind) {
     websocket.rebind();
   }
   if (wifi.isStaConnected() && wifi.isHomeMode()) {
     ota.begin();
   }
   servicesStarted = true;
-  Serial.printf("[ready] drive services (%s)\n",
-                wifi.isHomeMode() ? "home" : "direct");
 }
 
 static void onNetworkReady() {
-  if (http.isRunning()) http.rebind();
-  if (wifi.isDriveReady() || wifi.isApActive()) {
-    startDriveServices();
-  }
+  if (http.isRunning()) http.syncDnsPublic();
+  startDriveServices(false);
 }
 
 void setup() {
   Serial.begin(115200);
-  delay(800);
+  delay(500);
   Serial.println();
-  Serial.println("=== RC-Car: drive modes + drive-first Wi-Fi ===");
+  Serial.println("=== RC-Car: SoftAP-first, drive-first ===");
 
   setDrivePump(pumpDriveServices);
 
   wifi.begin(
       [](const String &json) {
         Serial.printf("[wifi-status] %s\n", json.c_str());
-        if (json.indexOf("\"status\":\"connected\"") >= 0 &&
-            (json.indexOf("\"mode\":\"direct\"") >= 0 ||
-             json.indexOf("\"mode\":\"home\"") >= 0)) {
-          startDriveServices();
-        }
+        startDriveServices(false);
       },
       onNetworkReady);
 
+  // 1) SoftAP only — browser must reach http://192.168.4.1 before camera
   wifi.bootSoftAp();
-  delay(300);
+  delay(200);
 
   motors.begin();
   servo.begin();
-
-  if (!camera.begin()) {
-    Serial.println("[cam] unavailable — drive still works");
-  }
-
   driveModes.begin(&motors, &servo, &camera, &battery);
 
+  // 2) HTTP + WS before camera (camera init blocks Wi‑Fi briefly)
   http.begin(&wifi, &camera, &battery);
-
   wifi.setNetworkNotifyEnabled(true);
   wifi.notifyNetworkNow();
+  startDriveServices(false);
 
   battery.begin([](const String &json) { websocket.broadcast(json); });
 
-  delay(100);
+  // 3) Camera last — optional; SoftAP/drive already live
+  if (!camera.begin()) {
+    Serial.println("[cam] unavailable — drive still works");
+  } else {
+    cameraStarted = true;
+    camera.setQuality(VideoQuality::Low); // SoftAP-friendly default
+  }
+
   wifi.trySavedOrFallback();
 
   Serial.printf("[boot] hotspot \"%s\" / %s → http://192.168.4.1/\n", AP_SSID,
                 AP_PASS);
+  Serial.println("[boot] Home Wi‑Fi only after SoftAP has 0 clients");
 }
 
 void loop() {
-  // Priority 1: steering / motors / watchdog / mode ramps
+  // Priority 1: drive
   websocket.loop();
   driveModes.loop();
 
-  // Priority 2: battery / network
+  // Priority 2: network
   battery.loop();
   wifi.loop();
 
-  // Priority 3: HTTP camera / provision
+  // Priority 3: HTTP (camera /jpg may take time — pump mid-frame)
   http.loop();
 
+  // Recover immediately after any blocking HTTP
+  websocket.loop();
+  driveModes.loop();
+
   if (wifi.isStaConnected()) ota.loop();
-  if (!servicesStarted && wifi.isApActive()) {
-    startDriveServices();
-  }
+  if (!servicesStarted && wifi.isApActive()) startDriveServices(false);
 }

@@ -78,7 +78,11 @@ export function useCarConnection() {
   const applyReady = useCallback((s: CarStatus, via: "ap" | "sta") => {
     rememberCarIps(s);
 
-    const ip = via === "ap" ? s.apIp || AP_IP : s.ip || s.staIp || "";
+    // SoftAP path ALWAYS uses 192.168.4.1 — never the home LAN IP
+    const ip =
+      via === "ap"
+        ? AP_IP
+        : s.staIp || (s.ip && s.ip !== AP_IP ? s.ip : "") || s.ip || "";
     if (!ip) return;
 
     if (via === "sta" && isLanIp(ip)) {
@@ -86,10 +90,9 @@ export function useCarConnection() {
       setHomeLanIp(ip);
       saveEspIp(ip);
     } else {
-      // SoftAP control IP — keep home LAN IP intact
-      saveEspIp(ip);
+      saveEspIp(AP_IP);
       const sta = s.staIp || (s.ip && s.ip !== AP_IP ? s.ip : "");
-      if (sta) {
+      if (sta && isLanIp(sta)) {
         saveHomeLanIp(sta);
         setHomeLanIp(sta);
       }
@@ -186,16 +189,25 @@ export function useCarConnection() {
     setHomeSsid(loadHomeSsid());
 
     // SoftAP first — only works if phone is on Porsche_RC_Car
-    const ap = await fetchCarStatus(AP_IP, 1800);
+    // Prefer /api/status; SoftAP path always 192.168.4.1
+    const ap = await fetchCarStatusRetry(AP_IP, {
+      attempts: 8,
+      timeoutMs: 2000,
+      gapMs: 400,
+    });
     if (gen !== probeGen.current) return;
     if (ap && handleApStatus(ap)) return;
 
     // Home LAN IPs (never SoftAP)
     const candidates = [homeLan, saved, loadEspIp()].filter(
-      (ip, i, arr) => isLanIp(ip) && arr.indexOf(ip) === i,
+      (ip, i, arr) => isLanIp(ip!) && arr.indexOf(ip) === i,
     );
     for (const ip of candidates) {
-      const home = await fetchCarStatus(ip!, 2500);
+      const home = await fetchCarStatusRetry(ip!, {
+        attempts: 6,
+        timeoutMs: 2500,
+        gapMs: 500,
+      });
       if (gen !== probeGen.current) return;
       if (home && isDriveReadyStatus(home)) {
         applyReady(home, "sta");
@@ -220,7 +232,7 @@ export function useCarConnection() {
     async (raw: string) => {
       const ip = raw.trim().replace(/^https?:\/\//, "").split("/")[0] ?? "";
       if (!ip) {
-        setError("Enter the car IP (e.g. 192.168.1.50)");
+        setError("Enter the car IP (e.g. 192.168.2.203)");
         return;
       }
       const gen = ++probeGen.current;
@@ -228,14 +240,24 @@ export function useCarConnection() {
       setError(null);
       setMessage(`Trying ${ip}…`);
       const s = await fetchCarStatusRetry(ip, {
-        attempts: 4,
-        timeoutMs: 2000,
-        gapMs: 500,
+        attempts: 12,
+        timeoutMs: 2500,
+        gapMs: 600,
       });
       if (gen !== probeGen.current) return;
       if (s && isDriveReadyStatus(s)) {
-        if (ip === AP_IP || s.ap) applyReady({ ...s, apIp: AP_IP }, "ap");
-        else applyReady({ ...s, ip }, "sta");
+        if (ip === AP_IP || s.ap || s.apIp === AP_IP || s.mode === "direct") {
+          applyReady({ ...s, apIp: AP_IP, ap: true }, "ap");
+        } else {
+          const lan = s.staIp || s.ip || ip;
+          applyReady({ ...s, ip: lan, staIp: lan }, "sta");
+        }
+        return;
+      }
+      // Raw reachability: status JSON arrived without full flags
+      if (s) {
+        if (ip === AP_IP) applyReady({ ...s, apIp: AP_IP, ap: true }, "ap");
+        else applyReady({ ...s, ip, staIp: s.staIp || ip }, "sta");
         return;
       }
       setPhase("unreachable");
@@ -244,7 +266,9 @@ export function useCarConnection() {
           `Blocked or unreachable from HTTPS. On iPhone open Safari → http://${ip}/`,
         );
       } else {
-        setError(`No car at ${ip}. Check Wi‑Fi and IP.`);
+        setError(
+          `No car at ${ip}. Same Wi‑Fi as the car? SoftAP uses ${AP_IP}.`,
+        );
       }
     },
     [applyReady],
@@ -254,14 +278,23 @@ export function useCarConnection() {
     const gen = ++probeGen.current;
     setPhase("probing");
     setError(null);
-    setMessage(`Waiting for ${DIRECT_AP_SSID}… (DHCP can take a few seconds)`);
+    setMessage(`Waiting for ${DIRECT_AP_SSID}…`);
     setLinkPath("none");
     stopPoll();
 
+    if (isHttpsApp()) {
+      setPhase("unreachable");
+      setError(
+        `This page is HTTPS — the browser blocks http://${AP_IP}. ` +
+          `Open http://localhost:3000 while on ${DIRECT_AP_SSID}, or open http://${AP_IP}/ in Safari.`,
+      );
+      return;
+    }
+
     const ap = await fetchCarStatusRetry(AP_IP, {
-      attempts: 16,
-      timeoutMs: 2000,
-      gapMs: 500,
+      attempts: 20,
+      timeoutMs: 3500,
+      gapMs: 400,
     });
     if (gen !== probeGen.current) return;
 
@@ -270,7 +303,9 @@ export function useCarConnection() {
     setPhase("unreachable");
     setMessage(null);
     setError(
-      `Still can’t reach ${AP_IP}. Stay on ${DIRECT_AP_SSID} / ${AP_PASS}, ignore “no internet”, open http://192.168.4.1/ then try again.`,
+      `App can’t reach ${AP_IP} (SoftAP page may still open). ` +
+        `Stay on ${DIRECT_AP_SSID} / ${AP_PASS}, use http://localhost:3000 (not HTTPS), ` +
+        `then Direct again. SoftAP status: http://${AP_IP}/`,
     );
   }, [handleApStatus]);
 
@@ -300,6 +335,15 @@ export function useCarConnection() {
           setPhase("connecting_sta");
           return;
         }
+        if (s.status === "pending_home" || s.message?.includes("leave_hotspot") ||
+            s.message === "saved_leave_hotspot_for_home") {
+          setPhase("switch_phone");
+          setMessage(
+            `Home Wi‑Fi saved${s.ssid ? ` (${s.ssid})` : ""}.\n\n` +
+              `Leave ${DIRECT_AP_SSID}, join your router, wait ~10s, then Reconnect.`,
+          );
+          return;
+        }
         if (s.status === "failed" || s.wifi === "failed") {
           setPhase("setup");
           setError(s.error || s.message || "Connection failed");
@@ -318,7 +362,7 @@ export function useCarConnection() {
           setPhase("switch_phone");
           setMessage(
             `Car joined ${s.ssid || "home Wi‑Fi"} · ${s.ip}\n\n` +
-              `iPhone: leave SoftAP → join home Wi‑Fi → open http://${s.ip}/ in Safari.`,
+              `Leave SoftAP → join home Wi‑Fi → Reconnect or Try IP ${s.ip}`,
           );
           return;
         }
@@ -335,7 +379,7 @@ export function useCarConnection() {
   const submitWifi = async (ssid: string, password: string) => {
     setError(null);
     setPhase("connecting_sta");
-    setMessage("Connecting…");
+    setMessage("Saving home Wi‑Fi…");
     try {
       const res = await provisionWifi(AP_IP, ssid, password);
       if (!res.ok) {
@@ -345,7 +389,15 @@ export function useCarConnection() {
       }
       saveHomeSsid(ssid);
       setHomeSsid(ssid);
-      setMessage(res.message || "Connecting…");
+      // SoftAP stays up — car joins home only after you leave the hotspot
+      setPhase("switch_phone");
+      setMessage(
+        res.message ||
+          `Saved “${ssid}”.\n\n` +
+            `1) Leave ${DIRECT_AP_SSID}\n` +
+            `2) Join your home Wi‑Fi\n` +
+            `3) Wait ~10s for the car to join, then Reconnect / Try IP`,
+      );
     } catch {
       setPhase("unreachable");
       setError(`Join ${SETUP_AP_SSID} first, then try again.`);

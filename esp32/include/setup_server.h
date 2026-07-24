@@ -15,6 +15,8 @@ public:
   void begin(WifiManager *wifi, CameraStream *camera, BatteryMonitor *battery);
   /** Call after SoftAP / STA interface changes — ESP WebServer often dies on mode switch. */
   void rebind();
+  /** Refresh captive DNS without stopping WebServer (keeps WS/HTTP clients). */
+  void syncDnsPublic() { syncDns(); }
   void loop();
   bool isRunning() const { return _running; }
 

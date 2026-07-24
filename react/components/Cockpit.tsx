@@ -47,17 +47,6 @@ export function Cockpit() {
     saveDebugUi(on);
   };
 
-  // Auto-open when we need the user; auto-close once linked
-  useEffect(() => {
-    if (conn.phase === "ready") {
-      setSettingsOpen(false);
-      return;
-    }
-    if (conn.phase !== "idle") {
-      setSettingsOpen(true);
-    }
-  }, [conn.phase]);
-
   const {
     state: wsState,
     lastAck,
@@ -86,6 +75,21 @@ export function Cockpit() {
       }
     },
   });
+
+  // Auto-open when we need the user; only close after WS drive link is open
+  useEffect(() => {
+    if (conn.phase === "ready" && wsState === "open") {
+      setSettingsOpen(false);
+      return;
+    }
+    if (conn.phase === "ready" && wsState !== "open") {
+      setSettingsOpen(true);
+      return;
+    }
+    if (conn.phase !== "idle") {
+      setSettingsOpen(true);
+    }
+  }, [conn.phase, wsState]);
 
   const canDrive = ready && wsState === "open";
 
@@ -221,6 +225,7 @@ export function Cockpit() {
         onVideoQuality={conn.setVideoQuality}
         debugUi={debugUi}
         onDebugUi={changeDebugUi}
+        driveLinkState={wsState}
         onRetry={() => void conn.probe()}
         onRetryDirect={() => void conn.probeDirect()}
         onProbeIp={(ip) => void conn.probeIp(ip)}
@@ -236,8 +241,12 @@ export function Cockpit() {
         <section className="cockpit-windscreen flex min-h-0 items-stretch justify-center">
           <CameraView
             streamUrl={conn.streamUrl}
-            wifiReady={ready}
-            pollMs={conn.videoPollMs}
+            wifiReady={ready && wsState === "open"}
+            pollMs={
+              conn.linkPath === "direct"
+                ? Math.max(conn.videoPollMs, 320)
+                : conn.videoPollMs
+            }
             left={left}
             right={right}
             wheelDeg={wheelDeg}

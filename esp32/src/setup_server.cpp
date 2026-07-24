@@ -57,16 +57,16 @@ void SetupServer::sendCors() {
 }
 
 void SetupServer::handleOptions() {
+  // Chrome Private Network Access preflight
   sendCors();
+  _http.sendHeader("Access-Control-Allow-Private-Network", "true");
   _http.send(204);
 }
 
 void SetupServer::handleRoot() {
   sendCors();
   const bool ap = _wifi && _wifi->isApActive();
-  const bool setup = _wifi && _wifi->isSetupMode() &&
-                     !_wifi->isDirectMode() &&
-                     _wifi->phase() != WifiPhase::TryingSaved;
+  const bool setup = _wifi && _wifi->isSetupMode() && !_wifi->isDirectMode();
   const char *apName =
       !ap ? "—" : (setup ? SETUP_AP_SSID : DIRECT_AP_SSID);
   String json = _wifi ? _wifi->statusJson() : "{}";
@@ -177,8 +177,11 @@ void SetupServer::handleWifiPost() {
 
   JsonDocument resp;
   resp["ok"] = true;
-  resp["message"] = "Connecting...";
+  resp["message"] =
+      "Saved. Leave Porsche_RC_Car hotspot — car joins home Wi‑Fi when SoftAP "
+      "is idle, then reconnect on your router.";
   resp["ssid"] = ssid;
+  resp["pendingHome"] = true;
   String out;
   serializeJson(resp, out);
   _http.send(200, "application/json", out);
@@ -240,6 +243,7 @@ void SetupServer::registerRoutes() {
 
   _http.on("/", HTTP_OPTIONS, [this]() { handleOptions(); });
   _http.on("/api/status", HTTP_OPTIONS, [this]() { handleOptions(); });
+  _http.on("/api/ping", HTTP_OPTIONS, [this]() { handleOptions(); });
   _http.on("/api/wifi", HTTP_OPTIONS, [this]() { handleOptions(); });
   _http.on("/api/battery", HTTP_OPTIONS, [this]() { handleOptions(); });
   _http.on("/api/video", HTTP_OPTIONS, [this]() { handleOptions(); });
@@ -248,6 +252,10 @@ void SetupServer::registerRoutes() {
 
   _http.on("/", HTTP_GET, [this]() { handleRoot(); });
   _http.on("/api/status", HTTP_GET, [this]() { handleStatus(); });
+  _http.on("/api/ping", HTTP_GET, [this]() {
+    sendCors();
+    _http.send(200, "application/json", "{\"ok\":true,\"pong\":true}");
+  });
   _http.on("/api/battery", HTTP_GET, [this]() { handleBattery(); });
   _http.on("/api/video", HTTP_GET, [this]() { handleVideoGet(); });
   _http.on(
