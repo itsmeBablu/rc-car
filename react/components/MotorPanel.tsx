@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { Glass } from "@/components/Glass";
 import { MOTOR_MAX } from "@/lib/protocol";
 
 type Gear = "D" | "R";
@@ -41,6 +42,20 @@ function PedalIcon({ kind }: { kind: "accel" | "brake" }) {
         opacity="0.2"
       />
     </svg>
+  );
+}
+
+function PedalGlass({
+  children,
+  radius,
+}: {
+  children: ReactNode;
+  radius: number;
+}) {
+  return (
+    <Glass borderRadius={radius} zIndex={1} className="h-full w-full" fill={false}>
+      <span className="pedal-liquid-inner">{children}</span>
+    </Glass>
   );
 }
 
@@ -130,7 +145,7 @@ export function MotorPanel({
         <button
           type="button"
           disabled={!enabled}
-          className="pedal pedal-brake glass-pedal pedal-lg disabled:opacity-40"
+          className="pedal pedal-brake glass-pedal pedal-lg pedal-liquid disabled:opacity-40"
           onPointerDown={(e) => {
             e.currentTarget.setPointerCapture(e.pointerId);
             setAccel(false);
@@ -140,14 +155,16 @@ export function MotorPanel({
           onContextMenu={(e) => e.preventDefault()}
           aria-label="Brake"
         >
-          <PedalIcon kind="brake" />
-          <span className="pedal-label">Brake</span>
+          <PedalGlass radius={8}>
+            <PedalIcon kind="brake" />
+            <span className="pedal-label">Brake</span>
+          </PedalGlass>
         </button>
 
         <button
           type="button"
           disabled={!enabled}
-          className={`pedal pedal-accel glass-pedal pedal-lg disabled:opacity-40 ${accel ? "is-pressed" : ""}`}
+          className={`pedal pedal-accel glass-pedal pedal-lg pedal-liquid disabled:opacity-40 ${accel ? "is-pressed" : ""}`}
           onPointerDown={(e) => {
             e.currentTarget.setPointerCapture(e.pointerId);
             applyAccel(true);
@@ -157,8 +174,10 @@ export function MotorPanel({
           onContextMenu={(e) => e.preventDefault()}
           aria-label="Throttle"
         >
-          <PedalIcon kind="accel" />
-          <span className="pedal-label">Gas</span>
+          <PedalGlass radius={14}>
+            <PedalIcon kind="accel" />
+            <span className="pedal-label">Gas</span>
+          </PedalGlass>
         </button>
       </div>
     </section>

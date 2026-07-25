@@ -3,9 +3,9 @@
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { AnalogCluster } from "@/components/AnalogCluster";
 import { CameraView } from "@/components/CameraView";
+import { Glass } from "@/components/Glass";
 import {
   LinkSettingsModal,
-  type CarStatus,
 } from "@/components/LinkSettingsModal";
 import { MotorPanel } from "@/components/MotorPanel";
 import { SignalBars } from "@/components/SignalBars";
@@ -28,6 +28,7 @@ import {
   saveStoredWsUrl,
   upsertSavedNetwork,
   wheelDegToServo,
+  type CarStatus,
   type LinkMode,
 } from "@/lib/protocol";
 
@@ -261,18 +262,22 @@ export function Cockpit() {
   return (
     <div className="cockpit cockpit-graph relative flex h-dvh max-h-dvh flex-col overflow-hidden text-white">
       <header className="pointer-events-none absolute inset-x-0 top-0 z-20 flex items-start justify-start px-3 pt-1.5 sm:px-4">
-          <div className="brand-glass pointer-events-none flex items-center gap-2 px-2 py-1">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src="/rc.svg"
-            alt=""
-            className="brand-rc-logo h-7 w-auto sm:h-8"
-            draggable={false}
-          />
-          <p className="brand-title font-[family-name:var(--font-display)] flex items-center gap-1.5 text-[11px] tracking-[0.14em] text-[var(--paint)] sm:text-xs">
-            <span>GT2 RS</span>
-            <SignalBars bars={signalBars} compact />
-          </p>
+        <div className="brand-liquid-wrap pointer-events-none">
+          <Glass borderRadius={10} zIndex={2} className="h-full w-full">
+            <div className="lg-fill lg-fill-row gap-2 px-2 py-1">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src="/rc.svg"
+                alt=""
+                className="brand-rc-logo h-7 w-auto sm:h-8"
+                draggable={false}
+              />
+              <p className="brand-title font-[family-name:var(--font-display)] flex items-center gap-1.5 text-[11px] tracking-[0.14em] text-[var(--paint)] sm:text-xs">
+                <span>GT2 RS</span>
+                <SignalBars bars={signalBars} compact />
+              </p>
+            </div>
+          </Glass>
         </div>
       </header>
 
@@ -293,6 +298,9 @@ export function Cockpit() {
         onRefreshStatus={async () => {
           await refreshStatus();
         }}
+        onCarStatus={(s) => {
+          if (s) setCarStatus(s);
+        }}
       />
 
       <main className="cockpit-layout relative z-10 grid min-h-0 flex-1 gap-0 p-0">
@@ -312,14 +320,18 @@ export function Cockpit() {
           />
 
           <div className="cockpit-wheel">
-            <span
-              className={`steer-chip glass-chip wheel-steer-chip font-mono text-[10px] text-white/70 ${gear === "R" ? "is-reverse" : ""}`}
-            >
-              <span>{servoAngle}°</span>
-              {gear === "R" ? (
-                <span className="steer-chip-rev">REVERSE</span>
-              ) : null}
-            </span>
+            <div className="steer-liquid-wrap wheel-steer-chip mb-1">
+              <Glass borderRadius={999} zIndex={2} className="h-full w-full">
+                <span
+                  className={`lg-fill lg-fill-row justify-center gap-1 px-2 font-mono text-[10px] text-white/70 ${gear === "R" ? "is-reverse steer-chip" : "steer-chip"}`}
+                >
+                  <span>{servoAngle}°</span>
+                  {gear === "R" ? (
+                    <span className="steer-chip-rev">REVERSE</span>
+                  ) : null}
+                </span>
+              </Glass>
+            </div>
             <div className="wheel-row">
               <div className="wheel-lights">
                 <button

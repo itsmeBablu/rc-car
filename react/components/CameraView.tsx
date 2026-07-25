@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { Glass } from "@/components/Glass";
 import { LinkDock } from "@/components/LinkDock";
 import type { ConnectionState } from "@/hooks/useCarSocket";
 import type { LinkMode } from "@/lib/protocol";
@@ -141,24 +142,28 @@ export function CameraView({
             onOpenLink={onOpenLink}
           />
           {debug ? (
-            <div className="debug-glass w-full px-2.5 py-2 font-mono text-[9px] leading-relaxed text-white/70">
-              <p className="text-[8px] uppercase tracking-wider text-white/40">
-                Debug
-              </p>
-              <p>mode={mode}</p>
-              <p>ws={linkState}</p>
-              <p>ack={lastAck ?? "—"}</p>
-              <p>wheel={wheelDeg.toFixed(0)}°</p>
-              <p>
-                L={left} R={right}
-              </p>
-              <p className="truncate" title={jpgBase ?? undefined}>
-                cam={ok ? "jpg" : "off"}
-              </p>
-              <p className="truncate text-white/45" title={jpgBase ?? undefined}>
-                {jpgBase?.replace(/^https?:\/\//, "") ?? "no-url"}
-              </p>
-              {err ? <p className="text-amber-300/90">{err}</p> : null}
+            <div className="debug-liquid-wrap w-full">
+              <Glass borderRadius={14} zIndex={2} className="h-full w-full">
+                <div className="px-2.5 py-2 font-mono text-[9px] leading-relaxed text-white/70">
+                  <p className="text-[8px] uppercase tracking-wider text-white/40">
+                    Debug
+                  </p>
+                  <p>mode={mode}</p>
+                  <p>ws={linkState}</p>
+                  <p>ack={lastAck ?? "—"}</p>
+                  <p>wheel={wheelDeg.toFixed(0)}°</p>
+                  <p>
+                    L={left} R={right}
+                  </p>
+                  <p className="truncate" title={jpgBase ?? undefined}>
+                    cam={ok ? "jpg" : "off"}
+                  </p>
+                  <p className="truncate text-white/45" title={jpgBase ?? undefined}>
+                    {jpgBase?.replace(/^https?:\/\//, "") ?? "no-url"}
+                  </p>
+                  {err ? <p className="text-amber-300/90">{err}</p> : null}
+                </div>
+              </Glass>
             </div>
           ) : null}
         </div>

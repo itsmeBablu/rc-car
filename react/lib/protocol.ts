@@ -6,6 +6,27 @@ export const SAVED_NETWORKS_KEY = "rc-car-saved-networks";
 
 export type LinkMode = "hotspot" | "home";
 
+export type CarStatus = {
+  mode?: string;
+  apIp?: string;
+  ip?: string;
+  ssid?: string;
+  savedSsid?: string;
+  saved?: boolean;
+  home?: boolean;
+  homeState?: string;
+  batt?: number;
+  mv?: number;
+  usb?: boolean;
+  charging?: boolean;
+  full?: boolean;
+  ws?: string;
+  wsHome?: string;
+  rssi?: number;
+  apRssi?: number;
+  apClients?: number;
+};
+
 export type SavedNetwork = {
   id: string;
   mode: LinkMode;

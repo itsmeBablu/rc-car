@@ -100,14 +100,17 @@ void WifiControl::setupHttp() {
               "button{background:#c9a227;border:0;color:#111;font-weight:600}"
               "</style></head><body>");
     html += F("<h1>Porsche RC Car</h1>");
-    html += F("<p class=ok>SoftAP drive: join <code>");
+    html += F("<p class=ok>You reached the car SoftAP. This page works over HTTP.</p>");
+    html += F("<p>SoftAP: <code>");
     html += AP_SSID;
     html += F("</code> / <code>");
     html += AP_PASS;
     html += F("</code></p>");
-    html += F("<p>WS control: <code>ws://");
+    html += F("<p>Control WebSocket: <code>ws://");
     html += softApIp();
     html += F(":81</code></p>");
+    html += F("<p class=warn>If the Vercel app (HTTPS) won’t connect: stay on this Wi‑Fi and use this page, "
+              "or put phone + car on home Wi‑Fi and connect by LAN IP.</p>");
     if (homeConnected()) {
       html += F("<p class=ok>Home Wi‑Fi: <code>");
       html += WiFi.SSID();

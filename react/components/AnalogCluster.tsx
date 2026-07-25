@@ -1,5 +1,7 @@
 "use client";
 
+import { Glass } from "@/components/Glass";
+
 type Props = {
   speed: number;
   rpm: number;
@@ -56,6 +58,12 @@ export function AnalogCluster({
 
   return (
     <div className="porsche-cluster">
+      <div className="pc-liquid-layer" aria-hidden>
+        <Glass borderRadius={0} zIndex={0} className="h-full w-full" fill={false}>
+          <div className="h-full w-full" />
+        </Glass>
+      </div>
+
       <svg className="pc-shell" viewBox="0 0 320 130" preserveAspectRatio="none" aria-hidden>
         <path
           className="pc-shell-fill"
