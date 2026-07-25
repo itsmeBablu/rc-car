@@ -22,8 +22,10 @@ import {
   isHttpsApp,
   isStandalonePwa,
   networkKindLabel,
+  openCarSetupPage,
   openCarSoftApPage,
   openDeviceWifiSettings,
+  pickCarControlHost,
   probeCarHost,
   probeSoftAp,
   saveCarWifi,
@@ -308,6 +310,13 @@ export function LinkSettingsModal({
     Boolean(homeProbe?.ok) ||
     Boolean(carStatus?.home && carStatus.ip && wsState === "idle");
   const softReady = Boolean(softProbe?.ok);
+  /** SoftAP if phone is on hotspot, else car LAN IP (e.g. 192.168.2.203) */
+  const carCtlHost = pickCarControlHost({
+    softApOk: softReady,
+    lanIp: carStatus?.ip || homeProbe?.status?.ip || "",
+    fallback: homeHost || host,
+  });
+  const canTalkHttp = !blocked;
   /** SoftAP reachable — drive first; place Wi‑Fi is optional later */
   const onSoftApLink =
     softReady ||
@@ -352,7 +361,7 @@ export function LinkSettingsModal({
   };
 
   const refreshSavedNets = async () => {
-    const r = await fetchSavedCarWifi();
+    const r = await fetchSavedCarWifi(carCtlHost);
     if (r.ok) setSavedCarNets(r.networks);
     return r;
   };
@@ -388,7 +397,7 @@ export function LinkSettingsModal({
                 onClick={() =>
                   void (async () => {
                     setBusy(true);
-                    const r = await connectSavedCarWifi(n.ssid);
+                    const r = await connectSavedCarWifi(n.ssid, carCtlHost);
                     pushLog(
                       r.ok ? `Joining saved ${n.ssid}` : r.error || "Join failed",
                       r.ok ? "ok" : "err",
@@ -407,7 +416,7 @@ export function LinkSettingsModal({
                 onClick={() =>
                   void (async () => {
                     setBusy(true);
-                    const r = await forgetCarWifi(n.ssid);
+                    const r = await forgetCarWifi(n.ssid, carCtlHost);
                     if (r.ok) {
                       setSavedCarNets(r.networks || []);
                       pushLog(`Deleted ${n.ssid}`, "ok");
@@ -429,17 +438,38 @@ export function LinkSettingsModal({
   const renderJoinWifiCard = () => (
     <section className="link-card rounded-2xl border border-sky-400/30 bg-sky-400/10 p-3 sm:rounded-3xl sm:p-4">
       <p className="text-[8px] uppercase tracking-[0.14em] text-sky-200/90">
-        Place Wi‑Fi on car (optional)
+        Place Wi‑Fi on car
       </p>
       <p className="mt-1 text-[11px] leading-snug text-white/70 sm:text-sm">
-        SoftAP stays on. Save up to 10 places — if full, the least-recently used is
-        removed when you join a new one. Drive first; add Wi‑Fi when you’re ready.
+        SoftAP stays on. Save up to 10 places — a new join drops the least-recently
+        used if full.
+      </p>
+      <p className="mt-1 font-mono text-[9px] text-sky-100/60">
+        Saving via http://{carCtlHost}/wifi
       </p>
       {renderSavedNets()}
       <div className="mt-2.5 flex flex-col gap-1.5 sm:mt-3 sm:gap-2">
+        {!canTalkHttp && (
+          <div className="rounded-xl border border-amber-400/35 bg-amber-400/10 p-2.5 text-[10px] leading-snug text-amber-100 sm:text-xs">
+            <p>
+              HTTPS / Home Screen app can’t POST Wi‑Fi to the car. Open the car’s
+              setup page instead (HTTP).
+            </p>
+            <div className="mt-2">
+              <PrimaryBtn
+                onClick={() => {
+                  pushLog(`Open setup http://${carCtlHost}/setup`, "info");
+                  openCarSetupPage(carCtlHost);
+                }}
+              >
+                Open Wi‑Fi setup · {carCtlHost}
+              </PrimaryBtn>
+            </div>
+          </div>
+        )}
         <PrimaryBtn
           tone="muted"
-          disabled={scanning || busy || blocked}
+          disabled={scanning || busy || !canTalkHttp}
           onClick={() => void runWifiScan()}
         >
           {scanning ? "Scanning…" : "Scan nearby Wi‑Fi"}
@@ -485,7 +515,7 @@ export function LinkSettingsModal({
         />
         <PrimaryBtn
           tone="ok"
-          disabled={!carSsid.trim() || busy || blocked}
+          disabled={!carSsid.trim() || busy || !canTalkHttp}
           onClick={() => void saveWifiOnCar()}
         >
           {busy ? "Saving…" : "Save & join on car"}
@@ -513,17 +543,21 @@ export function LinkSettingsModal({
 
   const runWifiScan = async () => {
     if (httpsBlocksLocalCar()) {
-      setMsg(`Scan needs SoftAP — open http://${AP_HOST}/ or use HTTP localhost.`);
+      setMsg(`Scan needs HTTP — open http://${carCtlHost}/setup or use http://localhost:3000.`);
       return;
     }
     setScanning(true);
     setMsg(null);
-    pushLog("Scanning Wi‑Fi from car…", "info");
-    const r = await scanSoftApNetworks();
+    pushLog(`Scanning Wi‑Fi from car @ ${carCtlHost}…`, "info");
+    const r = await scanSoftApNetworks(12000, carCtlHost);
     setScanning(false);
     if (!r.ok) {
       pushLog(r.error || "Scan failed", "err");
-      setMsg("Scan failed — stay on SoftAP and try again.");
+      setMsg(
+        softReady
+          ? "Scan failed — stay on SoftAP and try again."
+          : `Scan failed via ${carCtlHost}. Join SoftAP or use car LAN IP.`,
+      );
       return;
     }
     setScanNets(r.networks);
@@ -534,16 +568,32 @@ export function LinkSettingsModal({
   const saveWifiOnCar = async () => {
     const ssid = carSsid.trim();
     if (!ssid) return;
+    if (httpsBlocksLocalCar()) {
+      setMsg(`HTTPS blocks save — open http://${carCtlHost}/setup`);
+      openCarSetupPage(carCtlHost);
+      return;
+    }
     setBusy(true);
     setMsg(null);
-    pushLog(`Save Wi‑Fi on car → ${ssid}`, "info");
-    const r = await saveCarWifi(ssid, carPass);
+    pushLog(`Save Wi‑Fi on car → ${ssid} @ ${carCtlHost}`, "info");
+    const r = await saveCarWifi(ssid, carPass, carCtlHost);
     if (!r.ok) {
+      // Retry SoftAP if we used LAN and it failed (or vice versa)
+      if (carCtlHost !== AP_HOST) {
+        pushLog(`Retry SoftAP ${AP_HOST}…`, "warn");
+        const r2 = await saveCarWifi(ssid, carPass, AP_HOST);
+        if (r2.ok) {
+          pushLog("Wi‑Fi saved via SoftAP — STA joining…", "ok");
+          if (r2.networks) setSavedCarNets(r2.networks);
+          setMsg("Saved via SoftAP. SoftAP stays up — you can keep driving.");
+          setTimeout(() => void runSoftProbe(), 4000);
+          setBusy(false);
+          return;
+        }
+      }
       pushLog(r.error || "Save failed", "err");
       setMsg(
-        blocked
-          ? `Can’t POST from HTTPS — open http://${AP_HOST}/ and save there.`
-          : "Join SoftAP first, then save.",
+        `Save failed via ${carCtlHost}. Join SoftAP (${AP_SSID}) and retry, or open http://${carCtlHost}/setup`,
       );
       setBusy(false);
       return;

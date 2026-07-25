@@ -197,21 +197,24 @@ void WifiControl::setupHttp() {
     _http.send(200, "application/json", networksJson());
   });
 
-  // Drive-first SoftAP landing (captive portal) — Wi‑Fi setup is optional later
+  // Drive-first SoftAP landing — Wi-Fi setup is optional (/setup)
   _http.on("/", HTTP_GET, [this]() {
     sendCors(_http);
     String html;
-    html.reserve(1400);
-    html += F("<!DOCTYPE html><html><head><meta name=viewport content='width=device-width,initial-scale=1'>"
+    html.reserve(1600);
+    html += F("<!DOCTYPE html><html><head><meta charset=utf-8>"
+              "<meta name=viewport content='width=device-width,initial-scale=1'>"
               "<title>RC Car</title><style>"
               "body{font:15px system-ui;background:#111;color:#eee;margin:1.2rem;line-height:1.45}"
               "code{font-family:ui-monospace,monospace;font-size:12px}"
               "a{color:#c9a227} .ok{color:#6ee7b7} .muted{color:#aaa}"
               ".box{border:1px solid #333;border-radius:12px;padding:1rem;margin:1rem 0;background:#1a1a1a}"
+              "button{background:#c9a227;border:0;color:#111;font-weight:600;padding:.6rem 1rem;border-radius:8px}"
               "</style></head><body>");
     html += F("<h1>Porsche RC Car</h1>");
     html += F("<div class=box><p class=ok><b>Drive first</b> — SoftAP is ready.</p>"
-              "<p>In the React app (HTTP): Link → Connect hotspot → close and drive.</p>"
+              "<p>In the React app over <b>HTTP</b> (not HTTPS / Home Screen): "
+              "Link &rarr; Connect hotspot &rarr; close and drive.</p>"
               "<p class=muted>WebSocket: <code>ws://");
     html += softApIp();
     html += F(":81</code></p></div>");
@@ -221,51 +224,56 @@ void WifiControl::setupHttp() {
     html += AP_PASS;
     html += F("</code></p>");
     if (homeConnected()) {
-      html += F("<p class=ok>Also on home Wi‑Fi: <code>");
+      html += F("<p class=ok>Also on place Wi-Fi: <code>");
       html += WiFi.SSID();
       html += F("</code> @ <code>");
       html += homeIp();
       html += F("</code></p>");
     } else if (_staWanted) {
-      html += F("<p class=muted>Home Wi‑Fi: connecting…</p>");
+      html += F("<p class=muted>Place Wi-Fi: connecting...</p>");
     }
-    html += F("<p class=muted>Optional later: teach the car a place Wi‑Fi from the app, "
-              "or <a href=/setup>Wi‑Fi setup page</a>.</p>");
+    html += F("<div class=box><p><b>Add place Wi-Fi</b> (optional, later)</p>"
+              "<p class=muted>Save home / cafe / etc. SoftAP stays on. Max 10.</p>"
+              "<p><a href=/setup><button type=button>Open Wi-Fi setup</button></a></p></div>");
     html += F("<p><a href=/status>status</a> · <a href=/networks>saved networks</a> · "
               "<a href=/jpg>camera</a></p></body></html>");
-    _http.send(200, "text/html", html);
+    _http.send(200, "text/html; charset=utf-8", html);
   });
 
   _http.on("/setup", HTTP_GET, [this]() {
     sendCors(_http);
     String html;
-    html.reserve(1600);
-    html += F("<!DOCTYPE html><html><head><meta name=viewport content='width=device-width,initial-scale=1'>"
-              "<title>Wi‑Fi setup</title><style>"
+    html.reserve(1800);
+    html += F("<!DOCTYPE html><html><head><meta charset=utf-8>"
+              "<meta name=viewport content='width=device-width,initial-scale=1'>"
+              "<title>Wi-Fi setup</title><style>"
               "body{font:14px system-ui;background:#111;color:#eee;margin:1.2rem}"
               "input,button{padding:.5rem;margin:.25rem 0;width:100%;box-sizing:border-box}"
               "button{background:#c9a227;border:0;color:#111;font-weight:600}"
-              "a{color:#c9a227} .muted{color:#888}"
+              "a{color:#c9a227} .muted{color:#888} .ok{color:#6ee7b7}"
               "</style></head><body>");
-    html += F("<p><a href=/>← Drive / SoftAP</a></p><h1>Place Wi‑Fi</h1>"
-              "<p class=muted>Optional. SoftAP stays on. Up to 10 saved networks.</p>"
+    html += F("<p><a href=/>&larr; Back</a></p><h1>Place Wi-Fi</h1>"
+              "<p class=muted>SoftAP stays on. Up to 10 saved networks. "
+              "Joining a new one drops the least-recently used if full.</p>"
               "<form method=POST action=/wifi>"
-              "<input name=ssid placeholder='SSID (2.4 GHz)' required>"
-              "<input name=pass type=password placeholder=Password>"
+              "<input name=ssid placeholder='SSID (2.4 GHz)' required autocomplete=username>"
+              "<input name=pass type=password placeholder=Password autocomplete=current-password>"
               "<button type=submit>Save &amp; join</button></form>");
     if (_netCount) {
       html += F("<h2>Saved</h2><ul>");
       for (uint8_t i = 0; i < _netCount; i++) {
         html += F("<li><code>");
         html += _nets[i].ssid;
-        html += F("</code></li>");
+        html += F("</code>");
+        if ((int)i == _activeIdx) html += F(" <span class=ok>active</span>");
+        html += F("</li>");
       }
       html += F("</ul>");
     }
     html += F("<form method=POST action=/forget style='margin-top:1rem'>"
               "<button type=submit>Forget all</button></form>"
               "</body></html>");
-    _http.send(200, "text/html", html);
+    _http.send(200, "text/html; charset=utf-8", html);
   });
 
   _http.on("/wifi", HTTP_POST, [this]() {

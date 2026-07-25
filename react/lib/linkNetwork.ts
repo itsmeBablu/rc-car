@@ -155,9 +155,11 @@ export type ScannedNetwork = {
 
 export async function scanSoftApNetworks(
   timeoutMs = 12000,
+  host: string = AP_HOST,
 ): Promise<{ ok: boolean; networks: ScannedNetwork[]; error?: string }> {
+  const h = normalizeCarHost(host) || AP_HOST;
   try {
-    const res = await fetch(`http://${AP_HOST}/scan?t=${Date.now()}`, {
+    const res = await fetch(`http://${h}/scan?t=${Date.now()}`, {
       cache: "no-store",
       mode: "cors",
       signal: AbortSignal.timeout(timeoutMs),
@@ -177,13 +179,37 @@ export async function scanSoftApNetworks(
   }
 }
 
+export function normalizeCarHost(host: string): string {
+  return host
+    .trim()
+    .replace(/^https?:\/\//i, "")
+    .replace(/\/.*$/, "")
+    .replace(/:81$/, "")
+    .replace(/:80$/, "");
+}
+
+/** SoftAP if reachable, else LAN STA IP — for /wifi /scan /networks */
+export function pickCarControlHost(opts: {
+  softApOk?: boolean;
+  lanIp?: string;
+  fallback?: string;
+}): string {
+  if (opts.softApOk) return AP_HOST;
+  const lan = normalizeCarHost(opts.lanIp || "");
+  if (lan && lan !== AP_HOST) return lan;
+  const fb = normalizeCarHost(opts.fallback || "");
+  return fb || AP_HOST;
+}
+
 export async function saveCarWifi(
   ssid: string,
   pass: string,
+  host: string = AP_HOST,
 ): Promise<{ ok: boolean; networks?: SavedCarWifi[]; error?: string }> {
+  const h = normalizeCarHost(host) || AP_HOST;
   try {
     const body = new URLSearchParams({ ssid, pass, json: "1" });
-    const res = await fetch(`http://${AP_HOST}/wifi`, {
+    const res = await fetch(`http://${h}/wifi`, {
       method: "POST",
       body,
       mode: "cors",
@@ -201,14 +227,17 @@ export async function saveCarWifi(
   }
 }
 
-export async function fetchSavedCarWifi(): Promise<{
+export async function fetchSavedCarWifi(
+  host: string = AP_HOST,
+): Promise<{
   ok: boolean;
   networks: SavedCarWifi[];
   max?: number;
   error?: string;
 }> {
+  const h = normalizeCarHost(host) || AP_HOST;
   try {
-    const res = await fetch(`http://${AP_HOST}/networks?t=${Date.now()}`, {
+    const res = await fetch(`http://${h}/networks?t=${Date.now()}`, {
       cache: "no-store",
       mode: "cors",
       signal: AbortSignal.timeout(5000),
@@ -227,11 +256,13 @@ export async function fetchSavedCarWifi(): Promise<{
 
 export async function forgetCarWifi(
   ssid?: string,
+  host: string = AP_HOST,
 ): Promise<{ ok: boolean; networks?: SavedCarWifi[]; error?: string }> {
+  const h = normalizeCarHost(host) || AP_HOST;
   try {
     const body = new URLSearchParams({ json: "1" });
     if (ssid) body.set("ssid", ssid);
-    const res = await fetch(`http://${AP_HOST}/forget`, {
+    const res = await fetch(`http://${h}/forget`, {
       method: "POST",
       body,
       mode: "cors",
@@ -251,10 +282,12 @@ export async function forgetCarWifi(
 
 export async function connectSavedCarWifi(
   ssid: string,
+  host: string = AP_HOST,
 ): Promise<{ ok: boolean; error?: string }> {
+  const h = normalizeCarHost(host) || AP_HOST;
   try {
     const body = new URLSearchParams({ ssid });
-    const res = await fetch(`http://${AP_HOST}/networks/connect`, {
+    const res = await fetch(`http://${h}/networks/connect`, {
       method: "POST",
       body,
       mode: "cors",
@@ -266,6 +299,14 @@ export async function connectSavedCarWifi(
     const msg = e instanceof Error ? e.message : String(e);
     return { ok: false, error: msg };
   }
+}
+
+export function openCarSetupPage(host: string = AP_HOST) {
+  if (typeof window === "undefined") return;
+  const h = normalizeCarHost(host) || AP_HOST;
+  const url = `http://${h}/setup`;
+  const w = window.open(url, "_blank", "noopener,noreferrer");
+  if (!w) window.location.href = url;
 }
 
 export function softApGuessLabel(probe: ProbeResult | null): string {
