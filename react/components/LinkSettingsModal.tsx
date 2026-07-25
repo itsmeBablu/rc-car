@@ -28,6 +28,10 @@ export type CarStatus = {
   home?: boolean;
   homeState?: string;
   batt?: number;
+  mv?: number;
+  usb?: boolean;
+  charging?: boolean;
+  full?: boolean;
   ws?: string;
   wsHome?: string;
   rssi?: number;
