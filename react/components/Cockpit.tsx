@@ -11,6 +11,8 @@ import { MotorPanel } from "@/components/MotorPanel";
 import { SignalBars } from "@/components/SignalBars";
 import { SteeringWheel } from "@/components/SteeringWheel";
 import { useCarSocket } from "@/hooks/useCarSocket";
+import { useDrivePhysics } from "@/hooks/useDrivePhysics";
+import type { DriveModeId } from "@/lib/drivePhysics";
 import {
   AP_HOST,
   AP_SSID,
@@ -46,6 +48,7 @@ export function Cockpit() {
   const [right, setRight] = useState(0);
   const [lightsOn, setLightsOn] = useState(false);
   const [gear, setGear] = useState<"D" | "R">("D");
+  const [driveMode, setDriveMode] = useState<DriveModeId>("NORMAL");
   const [batteryPct, setBatteryPct] = useState(100);
   const [usbPower, setUsbPower] = useState(false);
   const [charging, setCharging] = useState(false);
@@ -80,6 +83,25 @@ export function Cockpit() {
 
   const linked = wsState === "open";
   const canDrive = linked;
+
+  const {
+    pedal: pedalInput,
+    braking,
+    output: driveOutput,
+    setPedal,
+    setBraking,
+    hardStop,
+  } = useDrivePhysics({
+    mode: driveMode,
+    gear,
+    enabled: canDrive,
+    onMotor: (l, r) => {
+      setLeft(l);
+      setRight(r);
+      sendDriveWs(l, r);
+    },
+  });
+
   const statusHost =
     mode === "hotspot" ? AP_HOST : host || wsUrl.replace(/^ws:\/\//, "").replace(/:81$/, "");
   const httpBase = hostToHttpBase(statusHost);
@@ -165,13 +187,8 @@ export function Cockpit() {
     setLinkEnabled(false);
   };
 
-  const sendDrive = (l: number, r: number) => {
-    setLeft(l);
-    setRight(r);
-    sendDriveWs(l, r);
-  };
-
   const sendStop = () => {
+    hardStop();
     setLeft(0);
     setRight(0);
     setWheelDeg(0);
@@ -317,6 +334,7 @@ export function Cockpit() {
             wifiLabel={wifiLabel}
             lastAck={lastAck}
             onOpenLink={() => setSettingsOpen(true)}
+            linkExpanded={settingsOpen}
           />
 
           <div className="cockpit-wheel">
@@ -360,6 +378,7 @@ export function Cockpit() {
 
           <div className="cockpit-analog">
             <AnalogCluster
+              linked={linked}
               speed={speedKmh}
               rpm={rpm}
               fuel={batteryPct}
@@ -374,8 +393,13 @@ export function Cockpit() {
               enabled={canDrive}
               gear={gear}
               onGearChange={setGear}
-              onDrive={sendDrive}
-              onStop={sendStop}
+              driveMode={driveMode}
+              onDriveModeChange={setDriveMode}
+              pedalDown={pedalInput > 0}
+              braking={braking}
+              output={driveOutput}
+              onPedal={(down) => setPedal(down ? 1 : 0)}
+              onBrake={setBraking}
             />
           </div>
         </section>

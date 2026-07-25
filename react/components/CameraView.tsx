@@ -18,6 +18,7 @@ type Props = {
   wifiLabel?: string;
   lastAck?: string | null;
   onOpenLink: () => void;
+  linkExpanded?: boolean;
 };
 
 function toJpgUrl(streamOrBase: string): string {
@@ -44,6 +45,7 @@ export function CameraView({
   wifiLabel,
   lastAck,
   onOpenLink,
+  linkExpanded = false,
 }: Props) {
   const [frameUrl, setFrameUrl] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -139,6 +141,7 @@ export function CameraView({
             mode={mode}
             wifiLabel={wifiLabel}
             live={ok}
+            expanded={linkExpanded}
             onOpenLink={onOpenLink}
           />
           {debug ? (

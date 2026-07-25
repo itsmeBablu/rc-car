@@ -26,7 +26,8 @@ void WifiControl::begin(BatteryMonitor *batt, CameraStream *cam, StatusFn onStat
   gWifi = this;
 
   WiFi.persistent(false);
-  WiFi.setSleep(WIFI_PS_MIN_MODEM);
+  // No modem sleep — SoftAP + WS stay snappy (camera stays low priority)
+  WiFi.setSleep(WIFI_PS_NONE);
   loadCreds();
   startSoftAp();
   setupHttp();
@@ -109,8 +110,9 @@ void WifiControl::setupHttp() {
     html += F("<p>Control WebSocket: <code>ws://");
     html += softApIp();
     html += F(":81</code></p>");
-    html += F("<p class=warn>If the Vercel app (HTTPS) won’t connect: stay on this Wi‑Fi and use this page, "
-              "or put phone + car on home Wi‑Fi and connect by LAN IP.</p>");
+    html += F("<p class=warn><b>Home-screen / HTTPS app:</b> browsers block control to the car. "
+              "Stay on this SoftAP Wi‑Fi and use <b>this page</b>, or use home Wi‑Fi + LAN IP from HTTP.</p>");
+    html += F("<p class=ok>SoftAP and home Wi‑Fi can run together (AP+STA).</p>");
     if (homeConnected()) {
       html += F("<p class=ok>Home Wi‑Fi: <code>");
       html += WiFi.SSID();
@@ -259,8 +261,11 @@ String WifiControl::statusJson() const {
   doc["home"] = homeConnected();
   doc["savedSsid"] = _ssid;
   doc["saved"] = _staWanted;
+  doc["staAttempt"] = _staAttempt;
+  doc["staPaused"] = false;
+  doc["wifiMode"] = "AP_STA";
+  doc["wl"] = (int)WiFi.status();
 
-  // SoftAP client signal (phone ↔ car hotspot)
   wifi_sta_list_t staList = {};
   if (esp_wifi_ap_get_sta_list(&staList) == ESP_OK && staList.num > 0) {
     int best = staList.sta[0].rssi;
@@ -274,10 +279,13 @@ String WifiControl::statusJson() const {
     doc["ssid"] = WiFi.SSID();
     doc["ip"] = homeIp();
     doc["rssi"] = WiFi.RSSI();
+    doc["homeState"] = "connected";
   } else if (_staWanted) {
     doc["ssid"] = _ssid;
     doc["home"] = false;
-    doc["homeState"] = _staPausedForApClients ? "paused_for_ap" : "connecting";
+    doc["homeState"] = "connecting";
+  } else {
+    doc["homeState"] = "idle";
   }
   doc["ws"] = String("ws://") + softApIp() + ":" + String(WS_PORT);
   if (homeConnected()) {
@@ -312,7 +320,7 @@ void WifiControl::beginSta() {
   _staStartedMs = millis();
   Serial.printf("[wifi] home STA \"%s\" attempt %u\n", _ssid.c_str(),
                 (unsigned)_staAttempt);
-  WiFi.setSleep(WIFI_PS_MIN_MODEM);
+  WiFi.setSleep(WIFI_PS_NONE);
   WiFi.begin(_ssid.c_str(), _pass.c_str());
 }
 
@@ -341,27 +349,13 @@ void WifiControl::disconnectHome() {
 }
 
 void WifiControl::pauseStaForApClients(bool pause) {
-  if (pause == _staPausedForApClients) return;
-  _staPausedForApClients = pause;
-  if (pause) {
-    Serial.println("[wifi] SoftAP client — pause home STA (stay linked)");
-    WiFi.disconnect(false, false);
-  } else if (_staWanted) {
-    Serial.println("[wifi] SoftAP empty — resume home STA");
-    _staAttempt = 0;
-    beginSta();
-  }
+  // SoftAP + home STA stay concurrent. Pausing STA while a phone is on
+  // SoftAP prevented home Wi‑Fi from ever finishing join during setup.
+  (void)pause;
+  _staPausedForApClients = false;
 }
 
 void WifiControl::loop() {
-  // SoftAP clients get exclusive radio priority for drive latency
-  const int clients = softApClients();
-  if (clients > 0) {
-    pauseStaForApClients(true);
-  } else {
-    pauseStaForApClients(false);
-  }
-
   if (_httpUp) {
     ensureCamRoutes();
     _http.handleClient();
@@ -370,8 +364,7 @@ void WifiControl::loop() {
   static wl_status_t last = WL_IDLE_STATUS;
   const wl_status_t st = WiFi.status();
 
-  if (!_staPausedForApClients && _staWanted && st == WL_CONNECTED &&
-      last != WL_CONNECTED) {
+  if (_staWanted && st == WL_CONNECTED && last != WL_CONNECTED) {
     Serial.printf("[wifi] home OK %s @ %s\n", WiFi.SSID().c_str(),
                   homeIp().c_str());
     saveCreds(_ssid, _pass, true);
@@ -382,11 +375,11 @@ void WifiControl::loop() {
     emitStatus();
   }
 
-  if (!_staPausedForApClients && _staWanted && st != WL_CONNECTED) {
+  if (_staWanted && st != WL_CONNECTED) {
     if (millis() - _staStartedMs > 18000) {
-      if (_staAttempt < 3) {
+      if (_staAttempt < 5) {
         beginSta();
-      } else if (millis() - _staStartedMs > 60000) {
+      } else if (millis() - _staStartedMs > 45000) {
         _staAttempt = 0;
         beginSta();
       }
@@ -395,9 +388,10 @@ void WifiControl::loop() {
 
   if (millis() - _lastStatusLogMs > 10000) {
     _lastStatusLogMs = millis();
-    Serial.printf("[wifi] ap=%s clients=%d home=%s\n", softApIp().c_str(),
-                  clients,
-                  homeConnected() ? homeIp().c_str() : "—");
+    Serial.printf("[wifi] ap=%s clients=%d home=%s staWanted=%d wl=%d\n",
+                  softApIp().c_str(), softApClients(),
+                  homeConnected() ? homeIp().c_str() : "—",
+                  (int)_staWanted, (int)st);
   }
 
   last = st;

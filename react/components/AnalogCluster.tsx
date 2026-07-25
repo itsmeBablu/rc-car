@@ -1,8 +1,11 @@
 "use client";
 
+import { useEffect, useRef, useState } from "react";
 import { Glass } from "@/components/Glass";
 
 type Props = {
+  /** When car links, needles sweep 0→100→0 once, then follow live values. */
+  linked?: boolean;
   speed: number;
   rpm: number;
   fuel: number;
@@ -17,8 +20,16 @@ type Props = {
 const SPEED_MAX = 330;
 const RPM_MAX = 8;
 const FUEL_LABELS = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100];
+const SWEEP_MS = 1500;
+
+function sweep01(t: number): number {
+  const x = Math.max(0, Math.min(1, t));
+  const tri = x < 0.5 ? x * 2 : 1 - (x - 0.5) * 2;
+  return tri * tri * (3 - 2 * tri);
+}
 
 export function AnalogCluster({
+  linked = false,
   speed,
   rpm,
   fuel,
@@ -26,9 +37,37 @@ export function AnalogCluster({
   charging = false,
   full = false,
 }: Props) {
-  const speedT = Math.max(0, Math.min(1, speed / SPEED_MAX));
-  const rpmT = Math.max(0, Math.min(1, rpm / RPM_MAX));
-  const fuelT = Math.max(0, Math.min(1, fuel / 100));
+  const [sweepT, setSweepT] = useState(1);
+  const wasLinked = useRef(false);
+
+  useEffect(() => {
+    if (linked && !wasLinked.current) {
+      const t0 = performance.now();
+      setSweepT(0);
+      let raf = 0;
+      const tick = (now: number) => {
+        const u = Math.min(1, (now - t0) / SWEEP_MS);
+        setSweepT(u);
+        if (u < 1) raf = requestAnimationFrame(tick);
+      };
+      raf = requestAnimationFrame(tick);
+      wasLinked.current = true;
+      return () => cancelAnimationFrame(raf);
+    }
+    if (!linked) {
+      wasLinked.current = false;
+      setSweepT(1);
+    }
+  }, [linked]);
+
+  const sweeping = linked && sweepT < 1;
+  const boot = sweeping ? sweep01(sweepT) : 0;
+
+  const speedT = sweeping
+    ? boot
+    : Math.max(0, Math.min(1, speed / SPEED_MAX));
+  const rpmT = sweeping ? boot : Math.max(0, Math.min(1, rpm / RPM_MAX));
+  const fuelT = sweeping ? boot : Math.max(0, Math.min(1, fuel / 100));
   const speedNeedle = polar(50, 50, 32, -120 + speedT * 240);
   const rpmNeedle = polar(50, 50, 28, -120 + rpmT * 240);
   const fuelNeedle = polar(50, 50, 26, -120 + fuelT * 240);

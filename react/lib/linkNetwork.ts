@@ -19,15 +19,24 @@ export function httpsBlocksLocalCar(): boolean {
   return isHttpsApp();
 }
 
+/** True when launched from “Add to Home Screen” (standalone PWA). */
+export function isStandalonePwa(): boolean {
+  if (typeof window === "undefined") return false;
+  const mq = window.matchMedia?.("(display-mode: standalone)")?.matches;
+  const ios = "standalone" in navigator && (navigator as Navigator & { standalone?: boolean }).standalone;
+  return Boolean(mq || ios);
+}
+
 export function getNetworkKind(): NetKind {
   if (typeof navigator === "undefined") return "unknown";
-  const c = (
-    navigator as Navigator & {
-      connection?: { type?: string; effectiveType?: string };
-      mozConnection?: { type?: string };
-      webkitConnection?: { type?: string };
-    }
-  ).connection ||
+  const c =
+    (
+      navigator as Navigator & {
+        connection?: { type?: string; effectiveType?: string };
+        mozConnection?: { type?: string };
+        webkitConnection?: { type?: string };
+      }
+    ).connection ||
     (navigator as Navigator & { mozConnection?: { type?: string } }).mozConnection ||
     (navigator as Navigator & { webkitConnection?: { type?: string } })
       .webkitConnection;
@@ -54,7 +63,6 @@ export function networkKindLabel(kind: NetKind): string {
   }
 }
 
-/** Open OS Wi‑Fi settings when the platform allows it. */
 export function openDeviceWifiSettings(): { opened: boolean; hint: string } {
   if (typeof window === "undefined") {
     return { opened: false, hint: "Open Wi‑Fi in phone Settings." };
@@ -64,10 +72,8 @@ export function openDeviceWifiSettings(): { opened: boolean; hint: string } {
   const isIOS = /iPhone|iPad|iPod/i.test(ua);
 
   if (isAndroid) {
-    // Prefer Settings intent — works from Chrome in many cases
     window.location.href =
       "intent://settings/wifi#Intent;scheme=android-app;package=com.android.settings;end";
-    // Fallback shortly after if still on page
     setTimeout(() => {
       try {
         window.open("android.settings.WIFI_SETTINGS", "_blank");
@@ -77,12 +83,11 @@ export function openDeviceWifiSettings(): { opened: boolean; hint: string } {
     }, 400);
     return {
       opened: true,
-      hint: "Opening Android Wi‑Fi settings… Join “Porsche_RC_Car” / 12345678.",
+      hint: `Opening Wi‑Fi settings… Join “${AP_SSID}” / 12345678.`,
     };
   }
 
   if (isIOS) {
-    // iOS blocks most prefs URLs; App-prefs sometimes works on older iOS
     try {
       window.location.href = "App-prefs:root=WIFI";
     } catch {
@@ -90,13 +95,13 @@ export function openDeviceWifiSettings(): { opened: boolean; hint: string } {
     }
     return {
       opened: false,
-      hint: "iPhone: open Settings → Wi‑Fi → join Porsche_RC_Car / 12345678, then return here.",
+      hint: `iPhone: Settings → Wi‑Fi → “${AP_SSID}” / 12345678, then return.`,
     };
   }
 
   return {
     opened: false,
-    hint: "Open your system Wi‑Fi settings and join the car network.",
+    hint: "Open system Wi‑Fi settings and join the car network.",
   };
 }
 
@@ -130,7 +135,7 @@ export async function probeCarHost(
       ok: false,
       ms,
       error: blocked
-        ? `Blocked or unreachable from HTTPS (${msg})`
+        ? `HTTPS/PWA blocked local fetch (${msg})`
         : msg,
     };
   }
@@ -143,7 +148,58 @@ export async function probeSoftAp(): Promise<ProbeResult> {
 export function softApGuessLabel(probe: ProbeResult | null): string {
   if (!probe) return "Not checked yet";
   if (probe.ok) {
-    return `Car SoftAP reachable (${probe.ms} ms) — phone is likely on “${AP_SSID}”`;
+    return `Car SoftAP reachable (${probe.ms} ms) — likely on “${AP_SSID}”`;
   }
   return `Car SoftAP not reachable — join “${AP_SSID}” first`;
+}
+
+export function openCarSoftApPage() {
+  if (typeof window === "undefined") return;
+  window.location.href = `http://${AP_HOST}/`;
+}
+
+export type LinkDebugSnapshot = {
+  at: string;
+  page: string;
+  https: boolean;
+  standalonePwa: boolean;
+  httpsBlocksLocal: boolean;
+  netKind: NetKind;
+  wsState: string;
+  linkMode: string;
+  host: string;
+  softProbe: ProbeResult | null;
+  homeProbe?: ProbeResult | null;
+  carStatus: CarStatus | null;
+  log: string[];
+  tip: string;
+};
+
+export function buildLinkDebugReport(s: LinkDebugSnapshot): string {
+  const tip =
+    s.tip ||
+    (s.httpsBlocksLocal
+      ? `HTTPS/PWA cannot open ws:// to the car. On SoftAP use http://${AP_HOST}/`
+      : "If SoftAP probe fails: join Porsche_RC_Car first. If home fails: save Wi‑Fi on car, then use STA IP.");
+
+  return [
+    "=== GT2 RS Link Debug ===",
+    `at: ${s.at}`,
+    `page: ${s.page}`,
+    `https: ${s.https}`,
+    `standalonePwa: ${s.standalonePwa}`,
+    `httpsBlocksLocal: ${s.httpsBlocksLocal}`,
+    `netKind: ${s.netKind}`,
+    `wsState: ${s.wsState}`,
+    `linkMode: ${s.linkMode}`,
+    `host: ${s.host}`,
+    `softProbe: ${JSON.stringify(s.softProbe)}`,
+    `homeProbe: ${JSON.stringify(s.homeProbe ?? null)}`,
+    `carStatus: ${JSON.stringify(s.carStatus)}`,
+    "--- log ---",
+    ...s.log,
+    "--- tip ---",
+    tip,
+    "=== end ===",
+  ].join("\n");
 }

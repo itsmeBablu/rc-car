@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
+import { DriveModeSwitch } from "@/components/DriveModeSwitch";
 import { Glass } from "@/components/Glass";
-import { MOTOR_MAX } from "@/lib/protocol";
+import type { DriveModeId } from "@/lib/drivePhysics";
 
 type Gear = "D" | "R";
 
@@ -10,9 +11,14 @@ type Props = {
   enabled: boolean;
   gear: Gear;
   onGearChange: (g: Gear) => void;
-  onDrive: (left: number, right: number) => void;
-  onStop: () => void;
-  speed?: number;
+  driveMode: DriveModeId;
+  onDriveModeChange: (m: DriveModeId) => void;
+  pedalDown: boolean;
+  braking: boolean;
+  /** 0..1 eased output — for pressed styling */
+  output: number;
+  onPedal: (down: boolean) => void;
+  onBrake: (down: boolean) => void;
 };
 
 function PedalIcon({ kind }: { kind: "accel" | "brake" }) {
@@ -53,7 +59,7 @@ function PedalGlass({
   radius: number;
 }) {
   return (
-    <Glass borderRadius={radius} zIndex={1} className="h-full w-full" fill={false}>
+    <Glass borderRadius={radius} zIndex={1} className="h-full w-full pointer-events-none" fill={false}>
       <span className="pedal-liquid-inner">{children}</span>
     </Glass>
   );
@@ -63,45 +69,23 @@ export function MotorPanel({
   enabled,
   gear,
   onGearChange,
-  onDrive,
-  onStop,
-  speed = Math.round(MOTOR_MAX * 0.85),
+  driveMode,
+  onDriveModeChange,
+  pedalDown,
+  braking,
+  output,
+  onPedal,
+  onBrake,
 }: Props) {
-  const [accel, setAccel] = useState(false);
-  const gearRef = useRef(gear);
-  const accelRef = useRef(accel);
-  const onDriveRef = useRef(onDrive);
-  const onStopRef = useRef(onStop);
-  gearRef.current = gear;
-  accelRef.current = accel;
-  onDriveRef.current = onDrive;
-  onStopRef.current = onStop;
-
-  const applyAccel = (active: boolean) => {
-    if (!enabled && active) return;
-    setAccel(active);
-    accelRef.current = active;
-    if (!active) {
-      onStopRef.current();
-      return;
-    }
-    const s = gearRef.current === "R" ? -speed : speed;
-    onDriveRef.current(s, s);
-  };
-
-  useEffect(() => {
-    if (!accel || !enabled) return;
-    const s = gear === "R" ? -speed : speed;
-    onDriveRef.current(s, s);
-  }, [gear, accel, enabled, speed]);
+  const onPedalRef = useRef(onPedal);
+  const onBrakeRef = useRef(onBrake);
+  onPedalRef.current = onPedal;
+  onBrakeRef.current = onBrake;
 
   useEffect(() => {
     const release = () => {
-      if (accelRef.current) {
-        setAccel(false);
-        accelRef.current = false;
-        onStopRef.current();
-      }
+      onPedalRef.current(false);
+      onBrakeRef.current(false);
     };
     window.addEventListener("blur", release);
     return () => {
@@ -111,7 +95,13 @@ export function MotorPanel({
   }, []);
 
   return (
-    <section className="pedal-stack flex flex-col items-end justify-end">
+    <section className="pedal-stack flex flex-col items-end justify-end gap-2">
+      <DriveModeSwitch
+        mode={driveMode}
+        onChange={onDriveModeChange}
+        disabled={!enabled}
+      />
+
       <div className="flex items-end gap-2.5">
         <button
           type="button"
@@ -145,15 +135,24 @@ export function MotorPanel({
         <button
           type="button"
           disabled={!enabled}
-          className="pedal pedal-brake glass-pedal pedal-lg pedal-liquid disabled:opacity-40"
+          className={`pedal pedal-brake glass-pedal pedal-lg pedal-liquid disabled:opacity-40 ${braking ? "is-pressed" : ""}`}
           onPointerDown={(e) => {
+            e.preventDefault();
             e.currentTarget.setPointerCapture(e.pointerId);
-            setAccel(false);
-            accelRef.current = false;
-            onStopRef.current();
+            onPedal(false);
+            onBrake(true);
           }}
+          onPointerUp={(e) => {
+            if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+              e.currentTarget.releasePointerCapture(e.pointerId);
+            }
+            onBrake(false);
+          }}
+          onPointerCancel={() => onBrake(false)}
+          onLostPointerCapture={() => onBrake(false)}
           onContextMenu={(e) => e.preventDefault()}
           aria-label="Brake"
+          aria-pressed={braking}
         >
           <PedalGlass radius={8}>
             <PedalIcon kind="brake" />
@@ -164,15 +163,23 @@ export function MotorPanel({
         <button
           type="button"
           disabled={!enabled}
-          className={`pedal pedal-accel glass-pedal pedal-lg pedal-liquid disabled:opacity-40 ${accel ? "is-pressed" : ""}`}
+          className={`pedal pedal-accel glass-pedal pedal-lg pedal-liquid disabled:opacity-40 ${pedalDown || output > 0.02 ? "is-pressed" : ""}`}
           onPointerDown={(e) => {
+            e.preventDefault();
             e.currentTarget.setPointerCapture(e.pointerId);
-            applyAccel(true);
+            onPedal(true);
           }}
-          onPointerUp={() => applyAccel(false)}
-          onPointerCancel={() => applyAccel(false)}
+          onPointerUp={(e) => {
+            if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+              e.currentTarget.releasePointerCapture(e.pointerId);
+            }
+            onPedal(false);
+          }}
+          onPointerCancel={() => onPedal(false)}
+          onLostPointerCapture={() => onPedal(false)}
           onContextMenu={(e) => e.preventDefault()}
           aria-label="Throttle"
+          aria-pressed={pedalDown}
         >
           <PedalGlass radius={14}>
             <PedalIcon kind="accel" />

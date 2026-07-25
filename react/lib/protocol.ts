@@ -8,6 +8,8 @@ export type LinkMode = "hotspot" | "home";
 
 export type CarStatus = {
   mode?: string;
+  ap?: boolean;
+  apSsid?: string;
   apIp?: string;
   ip?: string;
   ssid?: string;
@@ -15,6 +17,10 @@ export type CarStatus = {
   saved?: boolean;
   home?: boolean;
   homeState?: string;
+  staAttempt?: number;
+  staPaused?: boolean;
+  wifiMode?: string;
+  wl?: number;
   batt?: number;
   mv?: number;
   usb?: boolean;
@@ -22,6 +28,8 @@ export type CarStatus = {
   full?: boolean;
   ws?: string;
   wsHome?: string;
+  stream?: string;
+  streamHome?: string;
   rssi?: number;
   apRssi?: number;
   apClients?: number;

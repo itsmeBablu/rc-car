@@ -69,18 +69,18 @@ void WebsocketControl::handleMessage(uint8_t num, const char *msg) {
   bool ack = false;
 
   if (strcmp(cmd, "steer") == 0 && doc["angle"].is<int>() && _servo) {
-    _servo->setAngle(doc["angle"].as<int>());
+    _servo->setAngleImmediate(doc["angle"].as<int>());
   } else if (doc["steer"].is<int>() && _servo) {
-    _servo->setAngle(doc["steer"].as<int>());
+    _servo->setAngleImmediate(doc["steer"].as<int>());
   } else if (strcmp(cmd, "center") == 0 && _servo) {
-    _servo->setAngle(SERVO_CENTER);
+    _servo->setAngleImmediate(SERVO_CENTER);
     ack = true;
   } else if (strcmp(cmd, "drive") == 0 && _motors) {
     _motors->setBoth(doc["left"] | 0, doc["right"] | 0);
     // no ack — keep motors snappy
   } else if (strcmp(cmd, "stop") == 0) {
     if (_motors) _motors->stop();
-    if (_servo) _servo->setAngle(SERVO_CENTER);
+    if (_servo) _servo->setAngleImmediate(SERVO_CENTER);
     ack = true;
   } else if (strcmp(cmd, "lights") == 0) {
     bool on = doc["on"] | false;

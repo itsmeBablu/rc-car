@@ -9,10 +9,18 @@ type Props = {
   mode: LinkMode;
   wifiLabel?: string;
   live?: boolean;
+  expanded?: boolean;
   onOpenLink: () => void;
 };
 
-export function LinkDock({ state, mode, wifiLabel, live = false, onOpenLink }: Props) {
+export function LinkDock({
+  state,
+  mode,
+  wifiLabel,
+  live = false,
+  expanded = false,
+  onOpenLink,
+}: Props) {
   const linked = state === "open";
   const sub = linked
     ? mode === "hotspot"
@@ -23,9 +31,11 @@ export function LinkDock({ state, mode, wifiLabel, live = false, onOpenLink }: P
   return (
     <button
       type="button"
+      data-link-anchor="true"
       onClick={onOpenLink}
-      className="live-link link-dock-liquid group w-full overflow-hidden rounded-full text-left"
+      className={`live-link link-dock-liquid group w-full overflow-hidden rounded-full text-left${expanded ? " link-dock-ghost" : ""}`}
       aria-label="Open link settings"
+      aria-expanded={expanded}
     >
       <Glass borderRadius={999} zIndex={2} className="h-full w-full">
         <span className="lg-fill lg-fill-row gap-2 px-2.5 py-1.5">

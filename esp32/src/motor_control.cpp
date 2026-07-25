@@ -135,6 +135,10 @@ void MotorControl::setBoth(int left, int right) {
   _cmdRight = right;
   _targetLeft = scaleCommand(left);
   _targetRight = scaleCommand(right);
+  // Frontend drive-physics already eases — apply now (no second ramp delay)
+  _left = _targetLeft;
+  _right = _targetRight;
+  applyOutputs();
 }
 
 void MotorControl::stop() {

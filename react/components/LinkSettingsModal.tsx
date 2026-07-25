@@ -2,7 +2,9 @@
 
 import {
   useEffect,
+  useRef,
   useState,
+  type CSSProperties,
   type ReactNode,
   type TransitionEvent,
 } from "react";
@@ -11,10 +13,13 @@ import { SignalBars } from "@/components/SignalBars";
 import { ToggleSwitch } from "@/components/ToggleSwitch";
 import type { ConnectionState } from "@/hooks/useCarSocket";
 import {
+  buildLinkDebugReport,
   getNetworkKind,
   httpsBlocksLocalCar,
   isHttpsApp,
+  isStandalonePwa,
   networkKindLabel,
+  openCarSoftApPage,
   openDeviceWifiSettings,
   probeCarHost,
   probeSoftAp,
@@ -37,7 +42,7 @@ import {
 
 export type { CarStatus };
 
-type View = "guide" | "hotspot" | "home" | "saved" | "more";
+type View = "guide" | "away" | "home" | "debug";
 type LogLine = { t: number; text: string; tone?: "ok" | "warn" | "err" | "info" };
 
 type Props = {
@@ -107,34 +112,79 @@ export function LinkSettingsModal({
   const [view, setView] = useState<View>("guide");
   const [homeHost, setHomeHost] = useState(host || "");
   const [saved, setSaved] = useState<SavedNetwork[]>([]);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const [carSsid, setCarSsid] = useState("");
   const [carPass, setCarPass] = useState("");
   const [netKind, setNetKind] = useState<NetKind>("unknown");
   const [https, setHttps] = useState(false);
+  const [pwa, setPwa] = useState(false);
   const [softProbe, setSoftProbe] = useState<ProbeResult | null>(null);
+  const [homeProbe, setHomeProbe] = useState<ProbeResult | null>(null);
   const [probing, setProbing] = useState(false);
   const [log, setLog] = useState<LogLine[]>([]);
   const [wifiHint, setWifiHint] = useState<string | null>(null);
+  const [debugText, setDebugText] = useState("");
+  const [copied, setCopied] = useState(false);
   const [mounted, setMounted] = useState(open);
   const [shown, setShown] = useState(false);
+  const [geom, setGeom] = useState<CSSProperties>({});
+  const shellRef = useRef<HTMLDivElement>(null);
 
   const pushLog = (text: string, tone: LogLine["tone"] = "info") => {
-    setLog((prev) => [{ t: Date.now(), text, tone }, ...prev].slice(0, 12));
+    setLog((prev) => [{ t: Date.now(), text, tone }, ...prev].slice(0, 16));
   };
+
+  const readAnchor = (): DOMRect | null => {
+    const el = document.querySelector("[data-link-anchor]");
+    if (!el) return null;
+    return el.getBoundingClientRect();
+  };
+
+  const endGeom = (): CSSProperties => {
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const narrow = vw <= 720;
+    const width = narrow ? Math.min(vw * 0.92, 22 * 16) : vw * 0.5;
+    return {
+      ["--link-t" as string]: "0px",
+      ["--link-l" as string]: `${vw - width}px`,
+      ["--link-w" as string]: `${width}px`,
+      ["--link-h" as string]: `${vh}px`,
+      ["--link-r" as string]: "0px",
+    };
+  };
+
+  const originGeom = (r: DOMRect): CSSProperties => ({
+    ["--link-t" as string]: `${r.top}px`,
+    ["--link-l" as string]: `${r.left}px`,
+    ["--link-w" as string]: `${r.width}px`,
+    ["--link-h" as string]: `${r.height}px`,
+    ["--link-r" as string]: "999px",
+  });
 
   useEffect(() => {
     if (open) {
+      const anchor = readAnchor();
+      setGeom(anchor ? originGeom(anchor) : endGeom());
       setMounted(true);
+      setShown(false);
       const id = requestAnimationFrame(() => {
-        requestAnimationFrame(() => setShown(true));
+        requestAnimationFrame(() => {
+          // Force layout so the browser interpolates from the button rect
+          void shellRef.current?.offsetWidth;
+          setGeom(endGeom());
+          setShown(true);
+        });
       });
       return () => cancelAnimationFrame(id);
     }
+
+    const anchor = readAnchor();
+    if (anchor) setGeom(originGeom(anchor));
+    else setGeom(endGeom());
     setShown(false);
-    const t = window.setTimeout(() => setMounted(false), 400);
+    const t = window.setTimeout(() => setMounted(false), 520);
     return () => window.clearTimeout(t);
   }, [open]);
 
@@ -145,35 +195,46 @@ export function LinkSettingsModal({
     setSaved(loadSavedNetworks());
     setMsg(null);
     setHttps(isHttpsApp());
+    setPwa(isStandalonePwa());
     setNetKind(getNetworkKind());
-  }, [open, host]);
+    void (async () => {
+      setProbing(true);
+      const r = await probeSoftAp();
+      setSoftProbe(r);
+      if (r.ok && r.status) onCarStatus?.(r.status);
+      setProbing(false);
+    })();
+  }, [open, host, onCarStatus]);
 
   useEffect(() => {
     if (!open) return;
-    if (wsState === "connecting") pushLog("Connecting to car…", "info");
+    if (wsState === "connecting") pushLog("WebSocket connecting…", "info");
     if (wsState === "open") pushLog("Linked — you can drive", "ok");
-    if (wsState === "error") pushLog("Link failed", "err");
+    if (wsState === "error") pushLog("WebSocket error", "err");
+    if (wsState === "closed") pushLog("WebSocket closed", "warn");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [wsState, open]);
 
   const onPanelTransitionEnd = (e: TransitionEvent<HTMLDivElement>) => {
     if (e.target !== e.currentTarget) return;
-    if (e.propertyName !== "transform") return;
+    if (!["width", "left", "top", "height"].includes(e.propertyName)) return;
     if (!open) setMounted(false);
   };
 
   if (!mounted) return null;
 
+  const blocked = httpsBlocksLocalCar();
+
   const runSoftProbe = async () => {
     setProbing(true);
-    pushLog("Looking for car hotspot…", "info");
+    pushLog("Probe SoftAP 192.168.4.1/status…", "info");
     const r = await probeSoftAp();
     setSoftProbe(r);
     if (r.ok && r.status) {
       onCarStatus?.(r.status);
-      pushLog("Found the car", "ok");
+      pushLog(`SoftAP OK ${r.ms}ms home=${r.status.home} ip=${r.status.ip || "—"}`, "ok");
     } else {
-      pushLog(r.error || "Car not found yet", "err");
+      pushLog(r.error || "SoftAP probe failed", "err");
     }
     setProbing(false);
     return r;
@@ -188,24 +249,24 @@ export function LinkSettingsModal({
   const connectHotspotFlow = async () => {
     setBusy(true);
     setMsg(null);
-    pushLog("Starting hotspot link…", "info");
+    pushLog("Hotspot connect…", "info");
     if (httpsBlocksLocalCar()) {
       setMsg(
-        "HTTPS can’t use SoftAP WebSocket. Open the car page, or use Home Wi‑Fi.",
+        "HTTPS / Home Screen app cannot talk to the car. Open the car page on SoftAP instead.",
       );
-      pushLog("HTTPS blocks SoftAP WebSocket", "warn");
+      pushLog("Blocked: HTTPS mixed content / PWA", "err");
       setBusy(false);
-      setView("guide");
+      setView("away");
       return;
     }
     const probe = softProbe?.ok ? softProbe : await runSoftProbe();
     if (!probe.ok) {
-      setMsg("Car not found. Join Porsche_RC_Car first.");
+      setMsg(`Join Wi‑Fi “${AP_SSID}” first, then Check again.`);
       setBusy(false);
       return;
     }
     onConnectHotspot();
-    pushLog("WebSocket connecting…", "info");
+    pushLog("WS → ws://192.168.4.1:81", "info");
     setBusy(false);
   };
 
@@ -214,79 +275,69 @@ export function LinkSettingsModal({
     if (!h) return;
     setBusy(true);
     setMsg(null);
-    pushLog(`Connecting home → ${h}`, "info");
-    const probe = await probeCarHost(h);
-    if (probe.ok && probe.status) {
-      onCarStatus?.(probe.status);
-      pushLog("Car answered on home network", "ok");
-    } else {
-      pushLog(probe.error || "Car not reachable on that IP", "warn");
+
+    if (httpsBlocksLocalCar()) {
+      setMsg(
+        "HTTPS / Home Screen app blocks home LAN WebSockets too. Use http://localhost:3000 or the car SoftAP page.",
+      );
+      pushLog("Home blocked by HTTPS/PWA", "err");
+      setBusy(false);
+      return;
     }
-    onConnectHome(h);
+
+    pushLog(`Probe home → ${h}`, "info");
+    const probe = await probeCarHost(h, 5000);
+    setHomeProbe(probe);
+    if (!probe.ok) {
+      setMsg(
+        "Car not on that address. Save home Wi‑Fi on the car (via SoftAP page), wait until status shows home:true, then enter the car’s LAN IP.",
+      );
+      pushLog(probe.error || "Home probe failed", "err");
+      setBusy(false);
+      return;
+    }
+
+    const staIp = probe.status?.ip?.trim();
+    const connectHost = staIp && staIp !== "0.0.0.0" ? staIp : h;
+    if (staIp) setHomeHost(staIp);
+    onCarStatus?.(probe.status ?? null);
+    onConnectHome(connectHost);
+    pushLog(`WS → ${hostToWsUrl(connectHost)}`, "info");
     setBusy(false);
   };
 
-  /** One clear “next action” for beginners */
-  const next = (() => {
-    if (linked) {
-      return {
-        title: "You’re linked",
-        body: "Close this screen and drive. Use Disconnect only when you want to stop.",
-        cta: "Done — go drive",
-        action: onClose,
-        tone: "ok" as const,
-      };
-    }
-    if (netKind === "cellular") {
-      return {
-        title: "Turn on Wi‑Fi",
-        body: "Your phone is on mobile data. The car only talks over Wi‑Fi.",
-        cta: "Open Wi‑Fi settings",
-        action: changeWifi,
-        tone: "paint" as const,
-      };
-    }
-    if (!softProbe?.ok) {
-      return {
-        title: "Join the car Wi‑Fi",
-        body: `In phone Settings, connect to “${AP_SSID}” with password ${AP_PASS}. Then come back and tap Check.`,
-        cta: "Open Wi‑Fi settings",
-        action: changeWifi,
-        tone: "paint" as const,
-        secondary: {
-          label: probing ? "Checking car…" : "I joined — check car",
-          action: () => void runSoftProbe(),
-        },
-      };
-    }
-    if (https) {
-      return {
-        title: "Open the car’s own page",
-        body: "This website is HTTPS, so the browser blocks SoftAP control here. On the car Wi‑Fi, open the car page instead.",
-        cta: `Open http://${AP_HOST}/`,
-        action: () => {
-          window.open(`http://${AP_HOST}/`, "_blank", "noopener,noreferrer");
-        },
-        tone: "paint" as const,
-      };
-    }
-    return {
-      title: "Connect to the car",
-      body: "Phone is on Wi‑Fi and the car SoftAP answered. Tap below to finish linking.",
-      cta: busy ? "Connecting…" : "Connect hotspot",
-      action: () => void connectHotspotFlow(),
-      tone: "paint" as const,
-    };
-  })();
+  const refreshDebug = () => {
+    const report = buildLinkDebugReport({
+      at: new Date().toISOString(),
+      page: typeof window !== "undefined" ? window.location.href : "",
+      https,
+      standalonePwa: pwa,
+      httpsBlocksLocal: httpsBlocksLocalCar(),
+      netKind,
+      wsState,
+      linkMode: mode,
+      host,
+      softProbe,
+      homeProbe,
+      carStatus,
+      log: log.map((l) => `${new Date(l.t).toISOString()} [${l.tone}] ${l.text}`),
+      tip: blocked
+        ? `Open http://${AP_HOST}/ while on SoftAP — Home Screen HTTPS cannot control the car.`
+        : "SoftAP + home STA run together. Home needs saved SSID and a reachable LAN IP.",
+    });
+    setDebugText(report);
+    return report;
+  };
 
-  const connectSelected = () => {
-    const n = saved.find((s) => s.id === selectedId);
-    if (!n) return;
-    if (n.mode === "hotspot") void connectHotspotFlow();
-    else {
-      setHomeHost(n.host);
-      onConnectHome(n.host);
-      setView("home");
+  const copyDebug = async () => {
+    const report = refreshDebug();
+    try {
+      await navigator.clipboard.writeText(report);
+      setCopied(true);
+      pushLog("Debug copied to clipboard", "ok");
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      setMsg("Copy failed — select the text manually.");
     }
   };
 
@@ -299,591 +350,444 @@ export function LinkSettingsModal({
       onClick={onClose}
     >
       <div
+        ref={shellRef}
         className="link-fs-shell"
+        style={geom}
         onClick={(e) => e.stopPropagation()}
         onTransitionEnd={onPanelTransitionEnd}
       >
         <Glass borderRadius={0} zIndex={2} className="h-full w-full">
           <div className="link-fs-inner">
-        {/* Header */}
-        <header className="flex items-start justify-between gap-3 px-4 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))] sm:px-6">
-          <div>
-            <p className="text-[10px] uppercase tracking-[0.2em] text-white/35">
-              GT2 RS
-            </p>
-            <h1 className="font-[family-name:var(--font-display)] text-2xl tracking-[0.12em] text-[var(--paint)]">
-              LINK
-            </h1>
-            <p className="mt-1 flex items-center gap-2 text-xs text-white/50">
-              <SignalBars bars={signalBars} compact />
-              {linked
-                ? mode === "hotspot"
-                  ? "Hotspot"
-                  : "Home Wi‑Fi"
-                : wsState === "connecting"
-                  ? "Connecting…"
-                  : "Not linked"}
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-full border border-white/15 px-3 py-1.5 text-xs text-white/60 hover:bg-white/5"
-          >
-            Close
-          </button>
-        </header>
-
-        {/* Nav */}
-        <nav className="flex gap-1 overflow-x-auto border-b border-white/10 px-3 sm:px-6">
-          {(
-            [
-              ["guide", "Start"],
-              ["hotspot", "Away"],
-              ["home", "Home"],
-              ["saved", "Saved"],
-              ["more", "More"],
-            ] as const
-          ).map(([id, label]) => (
-            <button
-              key={id}
-              type="button"
-              onClick={() => setView(id)}
-              className={`shrink-0 px-3 py-2.5 text-xs tracking-wide ${
-                view === id
-                  ? "border-b-2 border-[var(--paint)] text-[var(--paint)]"
-                  : "text-white/40 hover:text-white/65"
-              }`}
-            >
-              {label}
-            </button>
-          ))}
-        </nav>
-
-        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-6">
-          {view === "guide" && (
-            <div className="mx-auto flex max-w-lg flex-col gap-5">
-              <section className="rounded-3xl border border-white/12 bg-white/[0.04] p-5">
-                <p className="text-[10px] uppercase tracking-[0.18em] text-white/40">
-                  What to do next
-                </p>
-                <h2 className="mt-2 font-[family-name:var(--font-display)] text-xl tracking-wide text-white">
-                  {next.title}
-                </h2>
-                <p className="mt-2 text-sm leading-relaxed text-white/60">
-                  {next.body}
-                </p>
-                <div className="mt-4 flex flex-col gap-2">
-                  <PrimaryBtn
-                    tone={next.tone}
-                    disabled={busy || probing}
-                    onClick={next.action}
-                  >
-                    {next.cta}
-                  </PrimaryBtn>
-                  {"secondary" in next && next.secondary ? (
-                    <PrimaryBtn
-                      tone="muted"
-                      disabled={busy || probing}
-                      onClick={next.secondary.action}
-                    >
-                      {next.secondary.label}
-                    </PrimaryBtn>
-                  ) : null}
-                </div>
-                {wifiHint && (
-                  <p className="mt-3 text-xs text-amber-200/90">{wifiHint}</p>
-                )}
-                {msg && <p className="mt-3 text-xs text-amber-200/90">{msg}</p>}
-              </section>
-
-              <section className="rounded-3xl border border-white/10 bg-black/25 p-4">
-                <p className="text-[10px] uppercase tracking-[0.18em] text-white/40">
-                  How linking works
-                </p>
-                <ol className="mt-3 space-y-3 text-sm text-white/70">
-                  <li className="flex gap-3">
-                    <span className="font-mono text-[var(--paint)]">1</span>
-                    <span>
-                      Put your phone on the <strong className="text-white/90">car Wi‑Fi</strong>{" "}
-                      (away from home) or your <strong className="text-white/90">home Wi‑Fi</strong>{" "}
-                      (same as the car).
-                    </span>
-                  </li>
-                  <li className="flex gap-3">
-                    <span className="font-mono text-[var(--paint)]">2</span>
-                    <span>
-                      Check that this app can see the car, then tap Connect.
-                    </span>
-                  </li>
-                  <li className="flex gap-3">
-                    <span className="font-mono text-[var(--paint)]">3</span>
-                    <span>
-                      When the status says linked, close this screen and drive.
-                    </span>
-                  </li>
-                </ol>
-              </section>
-
-              <section className="grid gap-3 sm:grid-cols-2">
-                <button
-                  type="button"
-                  onClick={() => setView("hotspot")}
-                  className="rounded-2xl border border-white/12 bg-white/[0.03] p-4 text-left hover:bg-white/[0.06]"
-                >
-                  <p className="text-[10px] uppercase tracking-wider text-white/40">
-                    Away from home
-                  </p>
-                  <p className="mt-1 text-sm text-white/90">Car hotspot</p>
-                  <p className="mt-1 text-xs text-white/45">
-                    Join {AP_SSID} on your phone
-                  </p>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setView("home")}
-                  className="rounded-2xl border border-white/12 bg-white/[0.03] p-4 text-left hover:bg-white/[0.06]"
-                >
-                  <p className="text-[10px] uppercase tracking-wider text-white/40">
-                    At home
-                  </p>
-                  <p className="mt-1 text-sm text-white/90">Same Wi‑Fi</p>
-                  <p className="mt-1 text-xs text-white/45">
-                    Phone + car on your router
-                  </p>
-                </button>
-              </section>
-
-              <section className="rounded-2xl border border-white/10 px-4 py-3">
-                <p className="text-[10px] uppercase tracking-wider text-white/40">
-                  Right now
-                </p>
-                <ul className="mt-2 space-y-1.5 text-xs text-white/55">
-                  <li>
-                    Phone network:{" "}
-                    <span className="text-white/80">
-                      {networkKindLabel(netKind)}
-                    </span>
-                  </li>
-                  <li>{softApGuessLabel(softProbe)}</li>
-                  <li>
-                    Link:{" "}
-                    <span className="text-white/80">
-                      {linked
-                        ? "connected"
-                        : wsState === "connecting"
-                          ? "connecting…"
-                          : "not connected"}
-                    </span>
-                  </li>
-                  {https && (
-                    <li className="text-amber-200/90">
-                      App is HTTPS — SoftAP drive needs the car page or Home Wi‑Fi
-                    </li>
-                  )}
-                </ul>
-              </section>
-
-              {log.length > 0 && (
-                <section className="rounded-2xl border border-white/10 bg-black/40 px-3 py-2">
-                  <p className="text-[10px] uppercase tracking-wider text-white/35">
-                    Activity
-                  </p>
-                  <ul className="mt-1 max-h-24 space-y-0.5 overflow-y-auto font-mono text-[10px]">
-                    {log.map((l) => (
-                      <li
-                        key={l.t + l.text}
-                        className={
-                          l.tone === "ok"
-                            ? "text-emerald-300/90"
-                            : l.tone === "err"
-                              ? "text-red-300/90"
-                              : l.tone === "warn"
-                                ? "text-amber-200/90"
-                                : "text-white/45"
-                        }
-                      >
-                        {l.text}
-                      </li>
-                    ))}
-                  </ul>
-                </section>
-              )}
-
-              {linked && (
-                <PrimaryBtn
-                  tone="muted"
-                  onClick={() => {
-                    onDisconnect();
-                    pushLog("Disconnected", "warn");
-                  }}
-                >
-                  Disconnect
-                </PrimaryBtn>
-              )}
-            </div>
-          )}
-
-          {view === "hotspot" && (
-            <div className="mx-auto flex max-w-lg flex-col gap-5">
+            <header className="flex items-start justify-between gap-3 px-4 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))] sm:px-5">
               <div>
-                <h2 className="font-[family-name:var(--font-display)] text-lg tracking-wide text-white">
-                  Drive away from home
-                </h2>
-                <p className="mt-2 text-sm leading-relaxed text-white/60">
-                  Your phone connects directly to the car’s Wi‑Fi. No home router
-                  needed.
+                <p className="text-[10px] uppercase tracking-[0.2em] text-white/35">
+                  GT2 RS
+                </p>
+                <h1 className="font-[family-name:var(--font-display)] text-2xl tracking-[0.12em] text-[var(--paint)]">
+                  LINK
+                </h1>
+                <p className="mt-1 flex items-center gap-2 text-xs text-white/50">
+                  <SignalBars bars={signalBars} compact />
+                  {linked
+                    ? mode === "hotspot"
+                      ? "Hotspot"
+                      : "Home Wi‑Fi"
+                    : wsState === "connecting"
+                      ? "Connecting…"
+                      : "Not linked"}
                 </p>
               </div>
+              <button
+                type="button"
+                onClick={onClose}
+                className="rounded-full border border-white/15 px-3 py-1.5 text-xs text-white/60 hover:bg-white/5"
+              >
+                Close
+              </button>
+            </header>
 
-              <ol className="space-y-4">
-                <li className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-                  <p className="text-[10px] uppercase tracking-wider text-[var(--paint)]">
-                    Step 1
+            <nav className="flex gap-1 overflow-x-auto border-b border-white/10 px-3 sm:px-5">
+              {(
+                [
+                  ["guide", "Start"],
+                  ["away", "Away"],
+                  ["home", "Home"],
+                  ["debug", "Debug"],
+                ] as const
+              ).map(([id, label]) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => {
+                    setView(id);
+                    if (id === "debug") refreshDebug();
+                  }}
+                  className={`shrink-0 px-3 py-2.5 text-xs tracking-wide ${
+                    view === id
+                      ? "border-b-2 border-[var(--paint)] text-[var(--paint)]"
+                      : "text-white/40 hover:text-white/65"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </nav>
+
+            <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-5">
+              {blocked && (
+                <div className="mb-4 rounded-2xl border border-amber-400/40 bg-amber-400/10 px-4 py-3 text-sm text-amber-100">
+                  <p className="font-medium">
+                    {pwa ? "Home Screen app" : "HTTPS page"} can’t reach the car
                   </p>
-                  <p className="mt-1 text-sm text-white/90">
-                    Join Wi‑Fi{" "}
-                    <code className="rounded bg-white/10 px-1.5 py-0.5 font-mono text-[12px]">
-                      {AP_SSID}
-                    </code>
-                  </p>
-                  <p className="mt-1 text-xs text-white/45">
-                    Password{" "}
-                    <code className="font-mono text-white/70">{AP_PASS}</code>
+                  <p className="mt-1 text-xs text-amber-100/75">
+                    Browsers block local <code className="text-amber-50">ws://</code> /{" "}
+                    <code className="text-amber-50">http://</code> from HTTPS. Join{" "}
+                    <strong>{AP_SSID}</strong>, then open the car’s own page.
                   </p>
                   <div className="mt-3">
-                    <PrimaryBtn onClick={changeWifi}>Open Wi‑Fi settings</PrimaryBtn>
+                    <PrimaryBtn
+                      onClick={() => {
+                        pushLog("Opening SoftAP car page", "info");
+                        openCarSoftApPage();
+                      }}
+                    >
+                      Open car page · http://{AP_HOST}/
+                    </PrimaryBtn>
                   </div>
-                </li>
-                <li className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-                  <p className="text-[10px] uppercase tracking-wider text-[var(--paint)]">
-                    Step 2
+                </div>
+              )}
+
+              {view === "guide" && (
+                <div className="flex flex-col gap-4">
+                  {linked ? (
+                    <section className="rounded-3xl border border-emerald-400/35 bg-emerald-400/10 p-4">
+                      <p className="text-sm text-emerald-100">You’re linked. Close and drive.</p>
+                      <div className="mt-3 flex flex-col gap-2">
+                        <PrimaryBtn tone="ok" onClick={onClose}>
+                          Done — go drive
+                        </PrimaryBtn>
+                        <PrimaryBtn tone="muted" onClick={onDisconnect}>
+                          Disconnect
+                        </PrimaryBtn>
+                      </div>
+                    </section>
+                  ) : (
+                    <>
+                      <section className="rounded-3xl border border-white/12 bg-white/[0.04] p-4">
+                        <p className="text-[10px] uppercase tracking-[0.16em] text-white/40">
+                          Easy setup
+                        </p>
+                        <p className="mt-2 text-sm text-white/75">
+                          Pick one path. SoftAP always stays on the car.
+                        </p>
+                        <div className="mt-4 grid gap-3">
+                          <button
+                            type="button"
+                            onClick={() => setView("away")}
+                            className="rounded-2xl border border-[var(--paint)]/35 bg-[var(--paint)]/10 p-4 text-left"
+                          >
+                            <p className="text-sm text-[var(--paint)]">Away · car hotspot</p>
+                            <p className="mt-1 text-xs text-white/50">
+                              Join {AP_SSID} / {AP_PASS}
+                            </p>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setView("home")}
+                            className="rounded-2xl border border-white/12 bg-white/[0.03] p-4 text-left"
+                          >
+                            <p className="text-sm text-white/90">Home · same Wi‑Fi</p>
+                            <p className="mt-1 text-xs text-white/50">
+                              Save router on car, then connect by LAN IP
+                            </p>
+                          </button>
+                        </div>
+                      </section>
+
+                      <section className="rounded-2xl border border-white/10 px-4 py-3 text-xs text-white/55">
+                        <p>
+                          Phone:{" "}
+                          <span className="text-white/80">{networkKindLabel(netKind)}</span>
+                        </p>
+                        <p className="mt-1">{softApGuessLabel(softProbe)}</p>
+                        <p className="mt-1">
+                          WS: <span className="text-white/80">{wsState}</span>
+                          {probing ? " · probing…" : ""}
+                        </p>
+                      </section>
+                    </>
+                  )}
+                  {msg && <p className="text-xs text-amber-200/90">{msg}</p>}
+                </div>
+              )}
+
+              {view === "away" && (
+                <div className="flex flex-col gap-4">
+                  <div>
+                    <h2 className="font-[family-name:var(--font-display)] text-lg tracking-wide">
+                      Away
+                    </h2>
+                    <p className="mt-1 text-sm text-white/55">
+                      Phone joins the car hotspot. Best when you’re not on home Wi‑Fi.
+                    </p>
+                  </div>
+                  <ol className="space-y-3 text-sm text-white/70">
+                    <li className="rounded-2xl border border-white/10 bg-black/20 p-3">
+                      <p className="text-[10px] uppercase tracking-wider text-[var(--paint)]">
+                        1 · Join Wi‑Fi
+                      </p>
+                      <p className="mt-1 font-mono text-xs text-white/85">
+                        {AP_SSID} · {AP_PASS}
+                      </p>
+                      <div className="mt-3">
+                        <PrimaryBtn tone="muted" onClick={changeWifi}>
+                          Open Wi‑Fi settings
+                        </PrimaryBtn>
+                      </div>
+                    </li>
+                    <li className="rounded-2xl border border-white/10 bg-black/20 p-3">
+                      <p className="text-[10px] uppercase tracking-wider text-[var(--paint)]">
+                        2 · Check car
+                      </p>
+                      <p className="mt-1 text-xs text-white/50">{softApGuessLabel(softProbe)}</p>
+                      <div className="mt-3">
+                        <PrimaryBtn
+                          tone="muted"
+                          disabled={probing}
+                          onClick={() => void runSoftProbe()}
+                        >
+                          {probing ? "Checking…" : "Check SoftAP"}
+                        </PrimaryBtn>
+                      </div>
+                    </li>
+                    <li className="rounded-2xl border border-white/10 bg-black/20 p-3">
+                      <p className="text-[10px] uppercase tracking-wider text-[var(--paint)]">
+                        3 · Connect
+                      </p>
+                      {blocked ? (
+                        <div className="mt-3">
+                          <PrimaryBtn onClick={openCarSoftApPage}>
+                            Open http://{AP_HOST}/
+                          </PrimaryBtn>
+                        </div>
+                      ) : (
+                        <div className="mt-3">
+                          <PrimaryBtn
+                            disabled={busy || !softProbe?.ok}
+                            onClick={() => void connectHotspotFlow()}
+                          >
+                            {busy ? "Connecting…" : "Connect hotspot"}
+                          </PrimaryBtn>
+                        </div>
+                      )}
+                    </li>
+                  </ol>
+                  {wifiHint && <p className="text-xs text-amber-200/90">{wifiHint}</p>}
+                  {msg && <p className="text-xs text-amber-200/90">{msg}</p>}
+                </div>
+              )}
+
+              {view === "home" && (
+                <div className="flex flex-col gap-4">
+                  <div>
+                    <h2 className="font-[family-name:var(--font-display)] text-lg tracking-wide">
+                      Home
+                    </h2>
+                    <p className="mt-1 text-sm text-white/55">
+                      SoftAP stays up. Home STA joins your router in parallel (no longer paused).
+                    </p>
+                  </div>
+
+                  <section className="rounded-2xl border border-white/10 bg-black/20 p-3">
+                    <p className="text-[10px] uppercase tracking-wider text-[var(--paint)]">
+                      1 · Teach car (once)
+                    </p>
+                    <p className="mt-1 text-xs text-white/50">
+                      Join SoftAP, open car page, or save here:
+                    </p>
+                    <div className="mt-3 flex flex-col gap-2">
+                      <input
+                        value={carSsid}
+                        onChange={(e) => setCarSsid(e.target.value)}
+                        placeholder="Home SSID (2.4 GHz)"
+                        className="rounded-xl border border-white/15 bg-black/40 px-3 py-2.5 text-sm text-white outline-none focus:border-[var(--paint)]"
+                      />
+                      <input
+                        value={carPass}
+                        onChange={(e) => setCarPass(e.target.value)}
+                        type="password"
+                        placeholder="Password"
+                        className="rounded-xl border border-white/15 bg-black/40 px-3 py-2.5 text-sm text-white outline-none focus:border-[var(--paint)]"
+                      />
+                      <PrimaryBtn
+                        tone="muted"
+                        disabled={!carSsid.trim() || busy}
+                        onClick={() =>
+                          void (async () => {
+                            setBusy(true);
+                            try {
+                              const body = new URLSearchParams({
+                                ssid: carSsid.trim(),
+                                pass: carPass,
+                              });
+                              const res = await fetch(`http://${AP_HOST}/wifi`, {
+                                method: "POST",
+                                body,
+                                mode: "cors",
+                              });
+                              if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                              pushLog("Home Wi‑Fi saved on car — STA joining…", "ok");
+                              setMsg("Saved on car. Wait ~15s, then Check SoftAP for home:true + ip.");
+                              setTimeout(() => void runSoftProbe(), 4000);
+                            } catch (e) {
+                              const err = e instanceof Error ? e.message : String(e);
+                              pushLog(`Save failed: ${err}`, "err");
+                              setMsg(
+                                blocked
+                                  ? "Can’t POST from HTTPS — open http://192.168.4.1/ and save there."
+                                  : "Join SoftAP first, then save.",
+                              );
+                            }
+                            setBusy(false);
+                          })()
+                        }
+                      >
+                        Save home Wi‑Fi on car
+                      </PrimaryBtn>
+                      <a
+                        href={`http://${AP_HOST}/`}
+                        className="text-center text-xs text-white/45 underline"
+                      >
+                        Or open car setup page
+                      </a>
+                    </div>
+                  </section>
+
+                  <section className="rounded-2xl border border-white/10 bg-black/20 p-3">
+                    <p className="text-[10px] uppercase tracking-wider text-[var(--paint)]">
+                      2 · Connect phone on home Wi‑Fi
+                    </p>
+                    <label className="mt-2 flex flex-col gap-1 text-xs text-white/45">
+                      Car LAN IP
+                      <input
+                        value={homeHost}
+                        onChange={(e) => setHomeHost(e.target.value)}
+                        placeholder="192.168.x.x"
+                        className="rounded-xl border border-white/15 bg-black/40 px-3 py-2.5 font-mono text-sm text-white outline-none focus:border-[var(--paint)]"
+                      />
+                    </label>
+                    {carStatus?.ip && (
+                      <button
+                        type="button"
+                        className="mt-2 text-left text-xs text-emerald-300 underline"
+                        onClick={() => setHomeHost(carStatus.ip || "")}
+                      >
+                        Use {carStatus.ip}
+                      </button>
+                    )}
+                    <p className="mt-2 font-mono text-[10px] text-white/35">
+                      {homeHost.trim() ? hostToWsUrl(homeHost) : "—"}
+                    </p>
+                    <div className="mt-3">
+                      {blocked ? (
+                        <p className="text-xs text-amber-200/85">
+                          HTTPS/PWA blocked — use local HTTP or SoftAP page.
+                        </p>
+                      ) : (
+                        <PrimaryBtn
+                          disabled={busy || !homeHost.trim()}
+                          onClick={() => void connectHomeFlow()}
+                        >
+                          {busy ? "Connecting…" : "Connect home"}
+                        </PrimaryBtn>
+                      )}
+                    </div>
+                  </section>
+
+                  {carStatus && (
+                    <p className="text-[11px] text-white/45">
+                      Car: home={String(carStatus.home)} state={carStatus.homeState || "—"}{" "}
+                      ip={carStatus.ip || "—"} saved={carStatus.savedSsid || "—"}
+                    </p>
+                  )}
+                  {msg && <p className="text-xs text-amber-200/90">{msg}</p>}
+                </div>
+              )}
+
+              {view === "debug" && (
+                <div className="flex flex-col gap-3">
+                  <p className="text-sm text-white/60">
+                    Run checks, then Copy and paste the dump here in chat.
                   </p>
-                  <p className="mt-1 text-sm text-white/90">
-                    Make sure the car answers
-                  </p>
-                  <p className="mt-1 text-xs text-white/45">
-                    {softApGuessLabel(softProbe)}
-                  </p>
-                  <div className="mt-3">
+                  <div className="flex flex-col gap-2">
                     <PrimaryBtn
                       tone="muted"
                       disabled={probing}
                       onClick={() => void runSoftProbe()}
                     >
-                      {probing ? "Checking…" : "Check car"}
+                      {probing ? "Probing…" : "Probe SoftAP"}
+                    </PrimaryBtn>
+                    <PrimaryBtn
+                      tone="muted"
+                      onClick={() => {
+                        void onRefreshStatus();
+                        refreshDebug();
+                        pushLog("Status refresh + debug rebuilt", "info");
+                      }}
+                    >
+                      Refresh status
+                    </PrimaryBtn>
+                    <PrimaryBtn onClick={() => void copyDebug()}>
+                      {copied ? "Copied ✓" : "Copy debug dump"}
                     </PrimaryBtn>
                   </div>
-                </li>
-                <li className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-                  <p className="text-[10px] uppercase tracking-wider text-[var(--paint)]">
-                    Step 3
-                  </p>
-                  <p className="mt-1 text-sm text-white/90">Finish the link</p>
-                  {https ? (
-                    <>
-                      <p className="mt-1 text-xs leading-relaxed text-amber-200/90">
-                        This app is HTTPS, so SoftAP WebSocket is blocked. Open
-                        the car’s page while you’re on {AP_SSID}.
+                  <pre className="max-h-[40vh] overflow-auto rounded-xl border border-white/10 bg-black/50 p-3 font-mono text-[10px] leading-relaxed text-white/65 whitespace-pre-wrap">
+                    {debugText || "Tap “Copy debug dump” after probing."}
+                  </pre>
+                  <ToggleSwitch
+                    label="Cockpit debug overlay"
+                    checked={debug}
+                    onChange={onDebugChange}
+                    hint="Shows live numbers on the camera."
+                  />
+                  {saved.length > 0 && (
+                    <div className="rounded-xl border border-white/10 p-3">
+                      <p className="text-[10px] uppercase tracking-wider text-white/40">
+                        Saved
                       </p>
-                      <div className="mt-3">
-                        <a
-                          href={`http://${AP_HOST}/`}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="flex w-full items-center justify-center rounded-2xl border border-amber-300/40 bg-amber-400/10 px-4 py-3.5 text-sm text-amber-100"
-                        >
-                          Open car page
-                        </a>
-                      </div>
-                    </>
-                  ) : (
-                    <div className="mt-3">
-                      <PrimaryBtn
-                        disabled={busy}
-                        onClick={() => void connectHotspotFlow()}
-                      >
-                        {busy
-                          ? "Connecting…"
-                          : linked && mode === "hotspot"
-                            ? "Reconnect"
-                            : "Connect hotspot"}
-                      </PrimaryBtn>
+                      <ul className="mt-2 space-y-2">
+                        {saved.map((n) => (
+                          <li
+                            key={n.id}
+                            className="flex items-center justify-between gap-2 text-xs text-white/60"
+                          >
+                            <button
+                              type="button"
+                              className="text-left underline"
+                              onClick={() => {
+                                if (n.mode === "hotspot") void connectHotspotFlow();
+                                else {
+                                  setHomeHost(n.host);
+                                  setView("home");
+                                }
+                              }}
+                            >
+                              {n.label} · {n.host}
+                            </button>
+                            <button
+                              type="button"
+                              className="text-white/35"
+                              onClick={() => setSaved(forgetSavedNetwork(n.id))}
+                            >
+                              Forget
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
                     </div>
                   )}
-                </li>
-              </ol>
-
-              <details className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3">
-                <summary className="cursor-pointer text-xs text-white/50">
-                  Optional: save home Wi‑Fi on the car
-                </summary>
-                <p className="mt-2 text-xs text-white/45">
-                  Stay on {AP_SSID}. The car will remember your router for later.
-                </p>
-                <label className="mt-3 flex flex-col gap-1 text-[11px] text-white/45">
-                  Home SSID (2.4 GHz)
-                  <input
-                    value={carSsid}
-                    onChange={(e) => setCarSsid(e.target.value)}
-                    className="rounded-xl border border-white/15 bg-black/40 px-3 py-2 font-mono text-sm text-white outline-none focus:border-[var(--paint)]"
-                  />
-                </label>
-                <label className="mt-2 flex flex-col gap-1 text-[11px] text-white/45">
-                  Password
-                  <input
-                    type="password"
-                    value={carPass}
-                    onChange={(e) => setCarPass(e.target.value)}
-                    className="rounded-xl border border-white/15 bg-black/40 px-3 py-2 font-mono text-sm text-white outline-none focus:border-[var(--paint)]"
-                  />
-                </label>
-                <div className="mt-3 flex gap-2">
-                  <button
-                    type="button"
-                    disabled={busy || !carSsid.trim()}
-                    onClick={() => void (async () => {
-                      setBusy(true);
-                      try {
-                        const body = new URLSearchParams({
-                          ssid: carSsid.trim(),
-                          pass: carPass,
-                        });
-                        const res = await fetch(`http://${AP_HOST}/wifi`, {
-                          method: "POST",
-                          headers: {
-                            "Content-Type": "application/x-www-form-urlencoded",
-                          },
-                          body,
-                          signal: AbortSignal.timeout(8000),
-                        });
-                        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-                        upsertSavedNetwork({
-                          mode: "home",
-                          host: carStatus?.ip || "rc-car.local",
-                          label: carSsid.trim(),
-                          ssid: carSsid.trim(),
-                        });
-                        setSaved(loadSavedNetworks());
-                        setMsg("Saved on car.");
-                        pushLog("Home Wi‑Fi saved on car", "ok");
-                      } catch (e) {
-                        setMsg(
-                          e instanceof Error ? e.message : "Save failed",
-                        );
-                      } finally {
-                        setBusy(false);
-                      }
-                    })()}
-                    className="rounded-xl border border-emerald-400/40 px-3 py-2 text-xs text-emerald-300 disabled:opacity-40"
+                  <PrimaryBtn
+                    tone="muted"
+                    onClick={() => {
+                      upsertSavedNetwork({
+                        mode: mode === "home" ? "home" : "hotspot",
+                        host: mode === "home" ? host || homeHost : AP_HOST,
+                        label: mode === "home" ? host || "Home" : AP_SSID,
+                      });
+                      setSaved(loadSavedNetworks());
+                      pushLog("Saved current link", "ok");
+                    }}
                   >
-                    Save on car
-                  </button>
-                </div>
-              </details>
-              {msg && <p className="text-xs text-amber-200/90">{msg}</p>}
-            </div>
-          )}
-
-          {view === "home" && (
-            <div className="mx-auto flex max-w-lg flex-col gap-5">
-              <div>
-                <h2 className="font-[family-name:var(--font-display)] text-lg tracking-wide text-white">
-                  Drive at home
-                </h2>
-                <p className="mt-2 text-sm leading-relaxed text-white/60">
-                  Phone and car on the <strong className="text-white/85">same</strong>{" "}
-                  home Wi‑Fi. Best for camera.
-                </p>
-              </div>
-
-              <ol className="space-y-4">
-                <li className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-                  <p className="text-[10px] uppercase tracking-wider text-[var(--paint)]">
-                    Step 1
-                  </p>
-                  <p className="mt-1 text-sm text-white/90">
-                    Teach the car your home Wi‑Fi once
-                  </p>
-                  <p className="mt-1 text-xs text-white/45">
-                    Join {AP_SSID}, open the car page, enter your router name &amp;
-                    password. Then switch your phone back to home Wi‑Fi.
-                  </p>
-                  <div className="mt-3 flex flex-col gap-2">
-                    <PrimaryBtn tone="muted" onClick={changeWifi}>
-                      Open Wi‑Fi settings
+                    Save current link
+                  </PrimaryBtn>
+                  {linked && (
+                    <PrimaryBtn tone="muted" onClick={onDisconnect}>
+                      Disconnect
                     </PrimaryBtn>
-                    <a
-                      href={`http://${AP_HOST}/`}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="flex w-full items-center justify-center rounded-2xl border border-white/20 px-4 py-3 text-sm text-white/70"
-                    >
-                      Open car setup page
-                    </a>
-                  </div>
-                </li>
-                <li className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-                  <p className="text-[10px] uppercase tracking-wider text-[var(--paint)]">
-                    Step 2
-                  </p>
-                  <p className="mt-1 text-sm text-white/90">Enter the car’s address</p>
-                  <label className="mt-3 flex flex-col gap-1 text-xs text-white/45">
-                    Car IP or name
-                    <input
-                      value={homeHost}
-                      onChange={(e) => setHomeHost(e.target.value)}
-                      placeholder="192.168.x.x or rc-car.local"
-                      className="rounded-xl border border-white/15 bg-black/40 px-3 py-2.5 font-mono text-sm text-white outline-none focus:border-[var(--paint)]"
-                    />
-                  </label>
-                  {carStatus?.ip && (
-                    <button
-                      type="button"
-                      className="mt-2 text-left text-xs text-emerald-300 underline"
-                      onClick={() => setHomeHost(carStatus.ip || "")}
-                    >
-                      Use {carStatus.ip}
-                    </button>
                   )}
-                </li>
-                <li className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-                  <p className="text-[10px] uppercase tracking-wider text-[var(--paint)]">
-                    Step 3
-                  </p>
-                  <p className="mt-1 text-sm text-white/90">Connect</p>
-                  <p className="mt-1 font-mono text-[10px] text-white/40">
-                    {homeHost.trim() ? hostToWsUrl(homeHost) : "—"}
-                  </p>
-                  <div className="mt-3">
-                    <PrimaryBtn
-                      disabled={busy || !homeHost.trim()}
-                      onClick={() => void connectHomeFlow()}
-                    >
-                      {busy
-                        ? "Connecting…"
-                        : linked && mode === "home"
-                          ? "Reconnect"
-                          : "Connect home"}
-                    </PrimaryBtn>
-                  </div>
-                </li>
-              </ol>
-              {https && (
-                <p className="text-xs text-amber-200/85">
-                  Note: HTTPS sites often block local WebSockets. If Connect fails,
-                  try local HTTP dev or the SoftAP car page.
-                </p>
-              )}
-              {msg && <p className="text-xs text-amber-200/90">{msg}</p>}
-            </div>
-          )}
-
-          {view === "saved" && (
-            <div className="mx-auto flex max-w-lg flex-col gap-4">
-              <h2 className="font-[family-name:var(--font-display)] text-lg tracking-wide text-white">
-                Saved on this phone
-              </h2>
-              <p className="text-sm text-white/55">
-                Pick one, then Connect. Forget removes it only from this device.
-              </p>
-              {saved.length === 0 ? (
-                <p className="rounded-2xl border border-dashed border-white/15 px-4 py-8 text-center text-sm text-white/40">
-                  Nothing saved yet. After you link once, it shows up here.
-                </p>
-              ) : (
-                <ul className="flex flex-col gap-2">
-                  {saved.map((n) => (
-                    <li key={n.id}>
-                      <button
-                        type="button"
-                        onClick={() => setSelectedId(n.id)}
-                        className={`w-full rounded-2xl border px-4 py-3 text-left ${
-                          selectedId === n.id
-                            ? "border-[var(--paint)]/50 bg-[var(--paint)]/10"
-                            : "border-white/10 bg-white/[0.03]"
-                        }`}
-                      >
-                        <p className="text-sm text-white/90">{n.label}</p>
-                        <p className="font-mono text-[10px] text-white/40">
-                          {n.mode === "hotspot" ? "Hotspot" : "Home"} · {n.host}
-                        </p>
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-              <div className="flex gap-2">
-                <PrimaryBtn disabled={!selectedId || busy} onClick={connectSelected}>
-                  Connect
-                </PrimaryBtn>
-              </div>
-              <button
-                type="button"
-                disabled={!selectedId}
-                onClick={() => {
-                  if (!selectedId) return;
-                  setSaved(forgetSavedNetwork(selectedId));
-                  setSelectedId(null);
-                }}
-                className="text-xs text-white/40 underline disabled:opacity-40"
-              >
-                Forget selected
-              </button>
-            </div>
-          )}
-
-          {view === "more" && (
-            <div className="mx-auto flex max-w-lg flex-col gap-5">
-              <h2 className="font-[family-name:var(--font-display)] text-lg tracking-wide text-white">
-                More
-              </h2>
-              <PrimaryBtn tone="muted" onClick={() => void onRefreshStatus()}>
-                Refresh car status
-              </PrimaryBtn>
-              {linked && (
-                <PrimaryBtn
-                  tone="muted"
-                  onClick={() => {
-                    onDisconnect();
-                    pushLog("Disconnected", "warn");
-                  }}
-                >
-                  Disconnect
-                </PrimaryBtn>
-              )}
-              <button
-                type="button"
-                onClick={() => void (async () => {
-                  try {
-                    await fetch(`http://${AP_HOST}/forget`, {
-                      method: "POST",
-                      signal: AbortSignal.timeout(5000),
-                    });
-                    setMsg("Car forgot home Wi‑Fi.");
-                  } catch {
-                    setMsg("Couldn’t reach car SoftAP to forget.");
-                  }
-                })()}
-                className="text-left text-xs text-white/45 underline"
-              >
-                Forget home Wi‑Fi on the car
-              </button>
-              <ToggleSwitch
-                label="Debug"
-                checked={debug}
-                onChange={onDebugChange}
-                hint="Shows extra numbers on the cockpit."
-              />
-              {msg && <p className="text-xs text-amber-200/90">{msg}</p>}
-              {carStatus && debug && (
-                <pre className="overflow-x-auto rounded-xl border border-white/10 bg-black/40 p-3 font-mono text-[10px] text-white/50">
-                  {JSON.stringify(carStatus, null, 2)}
-                </pre>
+                </div>
               )}
             </div>
-          )}
-        </div>
           </div>
         </Glass>
       </div>

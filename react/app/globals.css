@@ -145,6 +145,82 @@ body {
   line-height: normal;
 }
 
+/* Drive mode N / S toggle */
+.drive-mode-toggle {
+  display: flex;
+  gap: 0.25rem;
+  padding: 0.2rem;
+  border-radius: 999px;
+  border: 1px solid rgba(245, 224, 0, 0.28);
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.03)),
+    rgba(8, 9, 12, 0.55);
+  backdrop-filter: blur(16px) saturate(1.3);
+  -webkit-backdrop-filter: blur(16px) saturate(1.3);
+  box-shadow:
+    0 6px 16px rgba(0, 0, 0, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2);
+}
+
+.drive-mode-toggle.is-sport {
+  border-color: rgba(255, 100, 80, 0.45);
+}
+
+.drive-mode-toggle.is-disabled {
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+.drive-mode-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.05rem;
+  min-width: 2.85rem;
+  padding: 0.28rem 0.45rem;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.4);
+  cursor: pointer;
+  transition:
+    background 0.18s ease,
+    color 0.18s ease,
+    box-shadow 0.18s ease;
+}
+
+.drive-mode-btn.is-on {
+  background: rgba(245, 224, 0, 0.18);
+  color: var(--paint);
+  box-shadow: inset 0 0 0 1px rgba(245, 224, 0, 0.35);
+}
+
+.drive-mode-toggle.is-sport .drive-mode-btn.is-on {
+  background: rgba(255, 90, 70, 0.22);
+  color: #ffb4a8;
+  box-shadow: inset 0 0 0 1px rgba(255, 120, 90, 0.45);
+}
+
+.drive-mode-tag {
+  font-family: var(--font-display), sans-serif;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  line-height: 1;
+}
+
+.drive-mode-label {
+  font-size: 7px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  opacity: 0.75;
+}
+
+.pedal-brake.is-pressed {
+  filter: brightness(1.15);
+  transform: translateY(2px) scale(0.98);
+}
+
 /* —— Drive mode dial (briefcase PIN / cylinder) —— */
 .drive-odo {
   --dm-item-h: 32px;
@@ -1426,16 +1502,11 @@ body {
   backdrop-filter: blur(6px);
 }
 
-/* Link guide — right popup, 75% width, full height, slide in/out */
+/* Link guide — expands from Link button (iOS sheet morph) */
 .link-fs {
   position: fixed;
   inset: 0;
   z-index: 60;
-  display: flex;
-  flex-direction: row;
-  align-items: stretch;
-  justify-content: flex-end;
-  padding: 0;
   background: rgba(0, 0, 0, 0);
   backdrop-filter: blur(0);
   -webkit-backdrop-filter: blur(0);
@@ -1443,35 +1514,47 @@ body {
   cursor: pointer;
   pointer-events: none;
   transition:
-    background 0.34s ease,
-    backdrop-filter 0.34s ease,
-    -webkit-backdrop-filter 0.34s ease;
+    background 0.42s ease,
+    backdrop-filter 0.42s ease,
+    -webkit-backdrop-filter 0.42s ease;
 }
 
 .link-fs.is-open {
-  background: rgba(0, 0, 0, 0.5);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+  background: rgba(0, 0, 0, 0.48);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
   pointer-events: auto;
 }
 
 .link-fs-shell {
-  width: 75%;
-  max-width: 75vw;
-  height: 100%;
+  position: fixed;
+  z-index: 61;
+  top: var(--link-t, 0px);
+  left: var(--link-l, 0px);
+  width: var(--link-w, 50%);
+  height: var(--link-h, 100%);
   min-height: 0;
-  flex: none;
+  overflow: hidden;
   cursor: default;
   pointer-events: auto;
-  border-left: 1px solid rgba(245, 224, 0, 0.22);
+  box-sizing: border-box;
+  border-radius: var(--link-r, 0px);
+  border: 1px solid rgba(245, 224, 0, 0.22);
   box-shadow: -12px 0 40px rgba(0, 0, 0, 0.45);
-  transform: translate3d(100%, 0, 0);
-  transition: transform 0.36s cubic-bezier(0.22, 1, 0.36, 1);
-  will-change: transform;
+  transition:
+    top 0.48s cubic-bezier(0.32, 0.72, 0, 1),
+    left 0.48s cubic-bezier(0.32, 0.72, 0, 1),
+    width 0.48s cubic-bezier(0.32, 0.72, 0, 1),
+    height 0.48s cubic-bezier(0.32, 0.72, 0, 1),
+    border-radius 0.48s cubic-bezier(0.32, 0.72, 0, 1),
+    box-shadow 0.4s ease,
+    border-color 0.3s ease;
+  will-change: top, left, width, height, border-radius;
 }
 
-.link-fs.is-open .link-fs-shell {
-  transform: translate3d(0, 0, 0);
+.link-fs:not(.is-open) .link-fs-shell {
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  border-color: rgba(245, 224, 0, 0.28);
 }
 
 .link-fs-inner {
@@ -1485,7 +1568,26 @@ body {
   border: none;
   background:
     radial-gradient(ellipse 90% 50% at 50% -10%, rgba(245, 224, 0, 0.1), transparent 55%),
-    rgba(10, 11, 14, 0.35);
+    rgba(10, 11, 14, 0.42);
+  opacity: 0;
+  transform: translateY(6px) scale(0.985);
+  transition:
+    opacity 0.2s ease,
+    transform 0.28s cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.link-fs.is-open .link-fs-inner {
+  opacity: 1;
+  transform: none;
+  transition:
+    opacity 0.28s ease 0.14s,
+    transform 0.4s cubic-bezier(0.32, 0.72, 0, 1) 0.06s;
+}
+
+.link-dock-ghost {
+  opacity: 0 !important;
+  pointer-events: none !important;
+  transition: opacity 0.2s ease !important;
 }
 
 /* @liquidglass/react fill child — undo centered flex */

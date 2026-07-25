@@ -19,8 +19,8 @@ private:
   Servo _servo;
   int _angle = SERVO_CENTER;
   int _target = SERVO_CENTER;
-  uint8_t _maxSteerPct = 80;
-  uint8_t _servoSpeed = 4;
+  uint8_t _maxSteerPct = 100;
+  uint8_t _servoSpeed = 18;
   uint32_t _lastMs = 0;
 
   int clampSteer(int degrees) const;

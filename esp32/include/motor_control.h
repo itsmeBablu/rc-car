@@ -26,9 +26,9 @@ private:
   int _cmdRight = 0;
   int _targetLeft = 0;
   int _targetRight = 0;
-  uint8_t _maxPwm = 178;
-  uint8_t _accel = 6;
-  uint8_t _brake = 14;
+  uint8_t _maxPwm = 255;
+  uint8_t _accel = 48;
+  uint8_t _brake = 96;
   uint32_t _lastRampMs = 0;
   bool _pwmOk = false;
 
