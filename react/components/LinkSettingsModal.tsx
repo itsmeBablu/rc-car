@@ -74,18 +74,18 @@ function PrimaryBtn({
   disabled?: boolean;
   tone?: "paint" | "ok" | "muted";
 }) {
-  const cls =
+  const toneCls =
     tone === "ok"
-      ? "border-emerald-400/50 bg-emerald-400/15 text-emerald-200"
+      ? "link-btn-ok"
       : tone === "muted"
-        ? "border-white/20 bg-white/5 text-white/75"
-        : "border-[var(--paint)]/60 bg-[var(--paint)]/15 text-[var(--paint)]";
+        ? "link-btn-muted"
+        : "link-btn-paint";
   return (
     <button
       type="button"
       disabled={disabled}
       onClick={onClick}
-      className={`w-full rounded-2xl border px-4 py-3.5 text-sm font-medium tracking-wide disabled:opacity-45 ${cls}`}
+      className={`link-btn ${toneCls}`}
     >
       {children}
     </button>
@@ -144,8 +144,7 @@ export function LinkSettingsModal({
   const endGeom = (): CSSProperties => {
     const vw = window.innerWidth;
     const vh = window.innerHeight;
-    const narrow = vw <= 720;
-    const width = narrow ? Math.min(vw * 0.92, 22 * 16) : vw * 0.5;
+    const width = vw * 0.45;
     return {
       ["--link-t" as string]: "0px",
       ["--link-l" as string]: `${vw - width}px`,
@@ -358,15 +357,15 @@ export function LinkSettingsModal({
       >
         <Glass borderRadius={0} zIndex={2} className="h-full w-full">
           <div className="link-fs-inner">
-            <header className="flex items-start justify-between gap-3 px-4 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))] sm:px-5">
+            <header className="link-fs-head flex w-full items-start justify-between gap-2 px-2.5 pb-2 pt-[max(0.45rem,env(safe-area-inset-top))] sm:gap-3 sm:px-4 sm:pb-3 sm:pt-[max(0.75rem,env(safe-area-inset-top))]">
               <div>
-                <p className="text-[10px] uppercase tracking-[0.2em] text-white/35">
+                <p className="link-fs-eyebrow text-[8px] uppercase tracking-[0.18em] text-white/35 sm:text-[10px] sm:tracking-[0.2em]">
                   GT2 RS
                 </p>
-                <h1 className="font-[family-name:var(--font-display)] text-2xl tracking-[0.12em] text-[var(--paint)]">
+                <h1 className="link-fs-title font-[family-name:var(--font-display)] text-lg tracking-[0.1em] text-[var(--paint)] sm:text-2xl sm:tracking-[0.12em]">
                   LINK
                 </h1>
-                <p className="mt-1 flex items-center gap-2 text-xs text-white/50">
+                <p className="link-fs-status mt-0.5 flex items-center gap-1.5 text-[10px] text-white/50 sm:mt-1 sm:gap-2 sm:text-xs">
                   <SignalBars bars={signalBars} compact />
                   {linked
                     ? mode === "hotspot"
@@ -380,13 +379,13 @@ export function LinkSettingsModal({
               <button
                 type="button"
                 onClick={onClose}
-                className="rounded-full border border-white/15 px-3 py-1.5 text-xs text-white/60 hover:bg-white/5"
+                className="link-fs-close rounded-full border border-white/15 px-2.5 py-1 text-[10px] text-white/60 hover:bg-white/5 sm:px-3 sm:py-1.5 sm:text-xs"
               >
                 Close
               </button>
             </header>
 
-            <nav className="flex gap-1 overflow-x-auto border-b border-white/10 px-3 sm:px-5">
+            <nav className="link-fs-nav flex w-full gap-0.5 overflow-x-auto border-b border-white/10 px-1.5 sm:gap-1 sm:px-4">
               {(
                 [
                   ["guide", "Start"],
@@ -402,7 +401,7 @@ export function LinkSettingsModal({
                     setView(id);
                     if (id === "debug") refreshDebug();
                   }}
-                  className={`shrink-0 px-3 py-2.5 text-xs tracking-wide ${
+                  className={`link-fs-tab shrink-0 px-2.5 py-1.5 text-[10px] tracking-wide sm:px-3 sm:py-2.5 sm:text-xs ${
                     view === id
                       ? "border-b-2 border-[var(--paint)] text-[var(--paint)]"
                       : "text-white/40 hover:text-white/65"
@@ -413,18 +412,18 @@ export function LinkSettingsModal({
               ))}
             </nav>
 
-            <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-5">
+            <div className="link-fs-body min-h-0 w-full flex-1 overflow-y-auto px-2.5 py-2.5 sm:px-4 sm:py-4">
               {blocked && (
-                <div className="mb-4 rounded-2xl border border-amber-400/40 bg-amber-400/10 px-4 py-3 text-sm text-amber-100">
+                <div className="link-fs-banner mb-3 rounded-xl border border-amber-400/40 bg-amber-400/10 px-3 py-2.5 text-[11px] leading-snug text-amber-100 sm:mb-4 sm:rounded-2xl sm:px-4 sm:py-3 sm:text-sm">
                   <p className="font-medium">
                     {pwa ? "Home Screen app" : "HTTPS page"} can’t reach the car
                   </p>
-                  <p className="mt-1 text-xs text-amber-100/75">
+                  <p className="mt-1 text-[10px] text-amber-100/75 sm:text-xs">
                     Browsers block local <code className="text-amber-50">ws://</code> /{" "}
                     <code className="text-amber-50">http://</code> from HTTPS. Join{" "}
                     <strong>{AP_SSID}</strong>, then open the car’s own page.
                   </p>
-                  <div className="mt-3">
+                  <div className="mt-2.5 sm:mt-3">
                     <PrimaryBtn
                       onClick={() => {
                         pushLog("Opening SoftAP car page", "info");
@@ -438,11 +437,11 @@ export function LinkSettingsModal({
               )}
 
               {view === "guide" && (
-                <div className="flex flex-col gap-4">
+                <div className="link-stack flex flex-col gap-2.5 sm:gap-4">
                   {linked ? (
-                    <section className="rounded-3xl border border-emerald-400/35 bg-emerald-400/10 p-4">
-                      <p className="text-sm text-emerald-100">You’re linked. Close and drive.</p>
-                      <div className="mt-3 flex flex-col gap-2">
+                    <section className="link-card rounded-2xl border border-emerald-400/35 bg-emerald-400/10 p-3 sm:rounded-3xl sm:p-4">
+                      <p className="text-[11px] text-emerald-100 sm:text-sm">You’re linked. Close and drive.</p>
+                      <div className="mt-2 flex flex-col gap-1.5 sm:mt-3 sm:gap-2">
                         <PrimaryBtn tone="ok" onClick={onClose}>
                           Done — go drive
                         </PrimaryBtn>
@@ -453,84 +452,84 @@ export function LinkSettingsModal({
                     </section>
                   ) : (
                     <>
-                      <section className="rounded-3xl border border-white/12 bg-white/[0.04] p-4">
-                        <p className="text-[10px] uppercase tracking-[0.16em] text-white/40">
+                      <section className="link-card rounded-2xl border border-white/12 bg-white/[0.04] p-3 sm:rounded-3xl sm:p-4">
+                        <p className="text-[8px] uppercase tracking-[0.14em] text-white/40 sm:text-[10px] sm:tracking-[0.16em]">
                           Easy setup
                         </p>
-                        <p className="mt-2 text-sm text-white/75">
+                        <p className="mt-1 text-[11px] leading-snug text-white/70 sm:mt-2 sm:text-sm sm:text-white/75">
                           Pick one path. SoftAP always stays on the car.
                         </p>
-                        <div className="mt-4 grid gap-3">
+                        <div className="mt-2.5 grid gap-2 sm:mt-4 sm:gap-3">
                           <button
                             type="button"
                             onClick={() => setView("away")}
-                            className="rounded-2xl border border-[var(--paint)]/35 bg-[var(--paint)]/10 p-4 text-left"
+                            className="link-choice rounded-xl border border-[var(--paint)]/35 bg-[var(--paint)]/10 p-2.5 text-left sm:rounded-2xl sm:p-4"
                           >
-                            <p className="text-sm text-[var(--paint)]">Away · car hotspot</p>
-                            <p className="mt-1 text-xs text-white/50">
+                            <p className="text-[11px] text-[var(--paint)] sm:text-sm">Away · car hotspot</p>
+                            <p className="mt-0.5 text-[9px] text-white/50 sm:mt-1 sm:text-xs">
                               Join {AP_SSID} / {AP_PASS}
                             </p>
                           </button>
                           <button
                             type="button"
                             onClick={() => setView("home")}
-                            className="rounded-2xl border border-white/12 bg-white/[0.03] p-4 text-left"
+                            className="link-choice rounded-xl border border-white/12 bg-white/[0.03] p-2.5 text-left sm:rounded-2xl sm:p-4"
                           >
-                            <p className="text-sm text-white/90">Home · same Wi‑Fi</p>
-                            <p className="mt-1 text-xs text-white/50">
+                            <p className="text-[11px] text-white/90 sm:text-sm">Home · same Wi‑Fi</p>
+                            <p className="mt-0.5 text-[9px] text-white/50 sm:mt-1 sm:text-xs">
                               Save router on car, then connect by LAN IP
                             </p>
                           </button>
                         </div>
                       </section>
 
-                      <section className="rounded-2xl border border-white/10 px-4 py-3 text-xs text-white/55">
+                      <section className="link-card rounded-xl border border-white/10 px-2.5 py-2 text-[10px] leading-snug text-white/55 sm:rounded-2xl sm:px-4 sm:py-3 sm:text-xs">
                         <p>
                           Phone:{" "}
                           <span className="text-white/80">{networkKindLabel(netKind)}</span>
                         </p>
-                        <p className="mt-1">{softApGuessLabel(softProbe)}</p>
-                        <p className="mt-1">
+                        <p className="mt-0.5 sm:mt-1">{softApGuessLabel(softProbe)}</p>
+                        <p className="mt-0.5 sm:mt-1">
                           WS: <span className="text-white/80">{wsState}</span>
                           {probing ? " · probing…" : ""}
                         </p>
                       </section>
                     </>
                   )}
-                  {msg && <p className="text-xs text-amber-200/90">{msg}</p>}
+                  {msg && <p className="text-[10px] text-amber-200/90 sm:text-xs">{msg}</p>}
                 </div>
               )}
 
               {view === "away" && (
-                <div className="flex flex-col gap-4">
+                <div className="link-stack flex flex-col gap-2.5 sm:gap-4">
                   <div>
-                    <h2 className="font-[family-name:var(--font-display)] text-lg tracking-wide">
+                    <h2 className="font-[family-name:var(--font-display)] text-sm tracking-wide sm:text-lg">
                       Away
                     </h2>
-                    <p className="mt-1 text-sm text-white/55">
+                    <p className="mt-0.5 text-[10px] leading-snug text-white/55 sm:mt-1 sm:text-sm">
                       Phone joins the car hotspot. Best when you’re not on home Wi‑Fi.
                     </p>
                   </div>
-                  <ol className="space-y-3 text-sm text-white/70">
-                    <li className="rounded-2xl border border-white/10 bg-black/20 p-3">
-                      <p className="text-[10px] uppercase tracking-wider text-[var(--paint)]">
+                  <ol className="space-y-2 text-[11px] text-white/70 sm:space-y-3 sm:text-sm">
+                    <li className="link-card rounded-xl border border-white/10 bg-black/20 p-2.5 sm:rounded-2xl sm:p-3">
+                      <p className="text-[8px] uppercase tracking-wider text-[var(--paint)] sm:text-[10px]">
                         1 · Join Wi‑Fi
                       </p>
-                      <p className="mt-1 font-mono text-xs text-white/85">
+                      <p className="mt-0.5 font-mono text-[10px] text-white/85 sm:mt-1 sm:text-xs">
                         {AP_SSID} · {AP_PASS}
                       </p>
-                      <div className="mt-3">
+                      <div className="mt-2 sm:mt-3">
                         <PrimaryBtn tone="muted" onClick={changeWifi}>
                           Open Wi‑Fi settings
                         </PrimaryBtn>
                       </div>
                     </li>
-                    <li className="rounded-2xl border border-white/10 bg-black/20 p-3">
-                      <p className="text-[10px] uppercase tracking-wider text-[var(--paint)]">
+                    <li className="link-card rounded-xl border border-white/10 bg-black/20 p-2.5 sm:rounded-2xl sm:p-3">
+                      <p className="text-[8px] uppercase tracking-wider text-[var(--paint)] sm:text-[10px]">
                         2 · Check car
                       </p>
-                      <p className="mt-1 text-xs text-white/50">{softApGuessLabel(softProbe)}</p>
-                      <div className="mt-3">
+                      <p className="mt-0.5 text-[10px] text-white/50 sm:mt-1 sm:text-xs">{softApGuessLabel(softProbe)}</p>
+                      <div className="mt-2 sm:mt-3">
                         <PrimaryBtn
                           tone="muted"
                           disabled={probing}
@@ -540,18 +539,18 @@ export function LinkSettingsModal({
                         </PrimaryBtn>
                       </div>
                     </li>
-                    <li className="rounded-2xl border border-white/10 bg-black/20 p-3">
-                      <p className="text-[10px] uppercase tracking-wider text-[var(--paint)]">
+                    <li className="link-card rounded-xl border border-white/10 bg-black/20 p-2.5 sm:rounded-2xl sm:p-3">
+                      <p className="text-[8px] uppercase tracking-wider text-[var(--paint)] sm:text-[10px]">
                         3 · Connect
                       </p>
                       {blocked ? (
-                        <div className="mt-3">
+                        <div className="mt-2 sm:mt-3">
                           <PrimaryBtn onClick={openCarSoftApPage}>
                             Open http://{AP_HOST}/
                           </PrimaryBtn>
                         </div>
                       ) : (
-                        <div className="mt-3">
+                        <div className="mt-2 sm:mt-3">
                           <PrimaryBtn
                             disabled={busy || !softProbe?.ok}
                             onClick={() => void connectHotspotFlow()}
@@ -562,42 +561,42 @@ export function LinkSettingsModal({
                       )}
                     </li>
                   </ol>
-                  {wifiHint && <p className="text-xs text-amber-200/90">{wifiHint}</p>}
-                  {msg && <p className="text-xs text-amber-200/90">{msg}</p>}
+                  {wifiHint && <p className="text-[10px] text-amber-200/90 sm:text-xs">{wifiHint}</p>}
+                  {msg && <p className="text-[10px] text-amber-200/90 sm:text-xs">{msg}</p>}
                 </div>
               )}
 
               {view === "home" && (
-                <div className="flex flex-col gap-4">
+                <div className="link-stack flex flex-col gap-2.5 sm:gap-4">
                   <div>
-                    <h2 className="font-[family-name:var(--font-display)] text-lg tracking-wide">
+                    <h2 className="font-[family-name:var(--font-display)] text-sm tracking-wide sm:text-lg">
                       Home
                     </h2>
-                    <p className="mt-1 text-sm text-white/55">
-                      SoftAP stays up. Home STA joins your router in parallel (no longer paused).
+                    <p className="mt-0.5 text-[10px] leading-snug text-white/55 sm:mt-1 sm:text-sm">
+                      SoftAP stays up. Home STA joins your router in parallel.
                     </p>
                   </div>
 
-                  <section className="rounded-2xl border border-white/10 bg-black/20 p-3">
-                    <p className="text-[10px] uppercase tracking-wider text-[var(--paint)]">
+                  <section className="link-card rounded-xl border border-white/10 bg-black/20 p-2.5 sm:rounded-2xl sm:p-3">
+                    <p className="text-[8px] uppercase tracking-wider text-[var(--paint)] sm:text-[10px]">
                       1 · Teach car (once)
                     </p>
-                    <p className="mt-1 text-xs text-white/50">
+                    <p className="mt-0.5 text-[10px] text-white/50 sm:mt-1 sm:text-xs">
                       Join SoftAP, open car page, or save here:
                     </p>
-                    <div className="mt-3 flex flex-col gap-2">
+                    <div className="mt-2 flex flex-col gap-1.5 sm:mt-3 sm:gap-2">
                       <input
                         value={carSsid}
                         onChange={(e) => setCarSsid(e.target.value)}
                         placeholder="Home SSID (2.4 GHz)"
-                        className="rounded-xl border border-white/15 bg-black/40 px-3 py-2.5 text-sm text-white outline-none focus:border-[var(--paint)]"
+                        className="link-input rounded-lg border border-white/15 bg-black/40 px-2.5 py-1.5 text-[11px] text-white outline-none focus:border-[var(--paint)] sm:rounded-xl sm:px-3 sm:py-2.5 sm:text-sm"
                       />
                       <input
                         value={carPass}
                         onChange={(e) => setCarPass(e.target.value)}
                         type="password"
                         placeholder="Password"
-                        className="rounded-xl border border-white/15 bg-black/40 px-3 py-2.5 text-sm text-white outline-none focus:border-[var(--paint)]"
+                        className="link-input rounded-lg border border-white/15 bg-black/40 px-2.5 py-1.5 text-[11px] text-white outline-none focus:border-[var(--paint)] sm:rounded-xl sm:px-3 sm:py-2.5 sm:text-sm"
                       />
                       <PrimaryBtn
                         tone="muted"
@@ -636,41 +635,41 @@ export function LinkSettingsModal({
                       </PrimaryBtn>
                       <a
                         href={`http://${AP_HOST}/`}
-                        className="text-center text-xs text-white/45 underline"
+                        className="text-center text-[10px] text-white/45 underline sm:text-xs"
                       >
                         Or open car setup page
                       </a>
                     </div>
                   </section>
 
-                  <section className="rounded-2xl border border-white/10 bg-black/20 p-3">
-                    <p className="text-[10px] uppercase tracking-wider text-[var(--paint)]">
+                  <section className="link-card rounded-xl border border-white/10 bg-black/20 p-2.5 sm:rounded-2xl sm:p-3">
+                    <p className="text-[8px] uppercase tracking-wider text-[var(--paint)] sm:text-[10px]">
                       2 · Connect phone on home Wi‑Fi
                     </p>
-                    <label className="mt-2 flex flex-col gap-1 text-xs text-white/45">
+                    <label className="mt-1.5 flex flex-col gap-0.5 text-[9px] text-white/45 sm:mt-2 sm:gap-1 sm:text-xs">
                       Car LAN IP
                       <input
                         value={homeHost}
                         onChange={(e) => setHomeHost(e.target.value)}
                         placeholder="192.168.x.x"
-                        className="rounded-xl border border-white/15 bg-black/40 px-3 py-2.5 font-mono text-sm text-white outline-none focus:border-[var(--paint)]"
+                        className="link-input rounded-lg border border-white/15 bg-black/40 px-2.5 py-1.5 font-mono text-[11px] text-white outline-none focus:border-[var(--paint)] sm:rounded-xl sm:px-3 sm:py-2.5 sm:text-sm"
                       />
                     </label>
                     {carStatus?.ip && (
                       <button
                         type="button"
-                        className="mt-2 text-left text-xs text-emerald-300 underline"
+                        className="mt-1.5 text-left text-[10px] text-emerald-300 underline sm:mt-2 sm:text-xs"
                         onClick={() => setHomeHost(carStatus.ip || "")}
                       >
                         Use {carStatus.ip}
                       </button>
                     )}
-                    <p className="mt-2 font-mono text-[10px] text-white/35">
+                    <p className="mt-1.5 font-mono text-[9px] text-white/35 sm:mt-2 sm:text-[10px]">
                       {homeHost.trim() ? hostToWsUrl(homeHost) : "—"}
                     </p>
-                    <div className="mt-3">
+                    <div className="mt-2 sm:mt-3">
                       {blocked ? (
-                        <p className="text-xs text-amber-200/85">
+                        <p className="text-[10px] text-amber-200/85 sm:text-xs">
                           HTTPS/PWA blocked — use local HTTP or SoftAP page.
                         </p>
                       ) : (
@@ -685,21 +684,21 @@ export function LinkSettingsModal({
                   </section>
 
                   {carStatus && (
-                    <p className="text-[11px] text-white/45">
+                    <p className="text-[9px] leading-snug text-white/45 sm:text-[11px]">
                       Car: home={String(carStatus.home)} state={carStatus.homeState || "—"}{" "}
                       ip={carStatus.ip || "—"} saved={carStatus.savedSsid || "—"}
                     </p>
                   )}
-                  {msg && <p className="text-xs text-amber-200/90">{msg}</p>}
+                  {msg && <p className="text-[10px] text-amber-200/90 sm:text-xs">{msg}</p>}
                 </div>
               )}
 
               {view === "debug" && (
-                <div className="flex flex-col gap-3">
-                  <p className="text-sm text-white/60">
+                <div className="link-stack flex flex-col gap-2 sm:gap-3">
+                  <p className="text-[10px] text-white/60 sm:text-sm">
                     Run checks, then Copy and paste the dump here in chat.
                   </p>
-                  <div className="flex flex-col gap-2">
+                  <div className="flex flex-col gap-1.5 sm:gap-2">
                     <PrimaryBtn
                       tone="muted"
                       disabled={probing}
@@ -721,7 +720,7 @@ export function LinkSettingsModal({
                       {copied ? "Copied ✓" : "Copy debug dump"}
                     </PrimaryBtn>
                   </div>
-                  <pre className="max-h-[40vh] overflow-auto rounded-xl border border-white/10 bg-black/50 p-3 font-mono text-[10px] leading-relaxed text-white/65 whitespace-pre-wrap">
+                  <pre className="max-h-[32vh] overflow-auto rounded-lg border border-white/10 bg-black/50 p-2 font-mono text-[9px] leading-relaxed whitespace-pre-wrap text-white/65 sm:max-h-[40vh] sm:rounded-xl sm:p-3 sm:text-[10px]">
                     {debugText || "Tap “Copy debug dump” after probing."}
                   </pre>
                   <ToggleSwitch

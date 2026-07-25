@@ -20,7 +20,7 @@ type Props = {
 const SPEED_MAX = 330;
 const RPM_MAX = 8;
 const FUEL_LABELS = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100];
-const SWEEP_MS = 1500;
+const SWEEP_MS = 2500;
 
 function sweep01(t: number): number {
   const x = Math.max(0, Math.min(1, t));
