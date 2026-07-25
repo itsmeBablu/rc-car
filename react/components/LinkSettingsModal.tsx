@@ -190,19 +190,60 @@ export function LinkSettingsModal({
   useEffect(() => {
     if (!open) return;
     setView("guide");
-    setHomeHost(host || "");
+    const knownHome =
+      (host || "").trim() ||
+      (carStatus?.home && carStatus.ip ? carStatus.ip : "") ||
+      "";
+    setHomeHost(knownHome || host || "");
     setSaved(loadSavedNetworks());
     setMsg(null);
     setHttps(isHttpsApp());
     setPwa(isStandalonePwa());
     setNetKind(getNetworkKind());
+    setSoftProbe(null);
+    setHomeProbe(null);
     void (async () => {
       setProbing(true);
-      const r = await probeSoftAp();
-      setSoftProbe(r);
-      if (r.ok && r.status) onCarStatus?.(r.status);
+      pushLog("Checking SoftAP + home…", "info");
+      const homeTarget = knownHome && knownHome !== AP_HOST ? knownHome : "";
+      const [soft, home] = await Promise.all([
+        probeSoftAp(),
+        homeTarget
+          ? probeCarHost(homeTarget, 4000)
+          : Promise.resolve(null as ProbeResult | null),
+      ]);
+      setSoftProbe(soft);
+      setHomeProbe(home);
+
+      if (soft.ok && soft.status) {
+        onCarStatus?.(soft.status);
+        pushLog(
+          `SoftAP OK ${soft.ms}ms · home=${soft.status.home} ip=${soft.status.ip || "—"}`,
+          "ok",
+        );
+        if (soft.status.ip) setHomeHost(soft.status.ip);
+      } else {
+        pushLog(
+          `SoftAP unreachable (${soft.error || "timeout"}) — normal if phone is on home Wi‑Fi`,
+          "warn",
+        );
+      }
+
+      if (home?.ok && home.status) {
+        onCarStatus?.(home.status);
+        const ip = home.status.ip || homeTarget;
+        if (ip) setHomeHost(ip);
+        pushLog(`Home car OK ${home.ms}ms @ ${ip}`, "ok");
+      } else if (homeTarget) {
+        pushLog(
+          `Home probe ${homeTarget} failed: ${home?.error || "no response"}`,
+          "err",
+        );
+      }
+
       setProbing(false);
     })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, host, onCarStatus]);
 
   useEffect(() => {
@@ -223,6 +264,16 @@ export function LinkSettingsModal({
   if (!mounted) return null;
 
   const blocked = httpsBlocksLocalCar();
+  const homeIp =
+    homeHost.trim() ||
+    homeProbe?.status?.ip ||
+    carStatus?.ip ||
+    host ||
+    "";
+  const homeReady =
+    Boolean(homeProbe?.ok) ||
+    Boolean(carStatus?.home && carStatus.ip && wsState === "idle");
+  const softReady = Boolean(softProbe?.ok);
 
   const runSoftProbe = async () => {
     setProbing(true);
@@ -322,7 +373,11 @@ export function LinkSettingsModal({
       log: log.map((l) => `${new Date(l.t).toISOString()} [${l.tone}] ${l.text}`),
       tip: blocked
         ? `Open http://${AP_HOST}/ while on SoftAP — Home Screen HTTPS cannot control the car.`
-        : "SoftAP + home STA run together. Home needs saved SSID and a reachable LAN IP.",
+        : !softProbe?.ok && (homeProbe?.ok || (carStatus?.home && carStatus.ip))
+          ? `SoftAP timeout is normal on home Wi‑Fi. Tap Connect home → ${homeHost || carStatus?.ip || host}. wsState idle means not linked yet.`
+          : wsState === "idle"
+            ? "wsState idle = WebSocket not open. Use Connect home/hotspot — SoftAP probe can fail while home works."
+            : "SoftAP + home STA run together. SoftAP fail + home OK = stay on home Wi‑Fi and Connect home.",
     });
     setDebugText(report);
     return report;
@@ -452,14 +507,59 @@ export function LinkSettingsModal({
                     </section>
                   ) : (
                     <>
+                      {/* Home LAN ready — primary path when SoftAP probe fails */}
+                      {!blocked && homeIp && (homeReady || homeProbe?.ok || carStatus?.home) && (
+                        <section className="link-card rounded-2xl border border-emerald-400/35 bg-emerald-400/10 p-3 sm:rounded-3xl sm:p-4">
+                          <p className="text-[8px] uppercase tracking-[0.14em] text-emerald-300/80">
+                            Home Wi‑Fi ready
+                          </p>
+                          <p className="mt-1 text-[11px] leading-snug text-emerald-50/90 sm:text-sm">
+                            Car is on your router
+                            {carStatus?.ssid ? ` (${carStatus.ssid})` : ""}. SoftAP
+                            probe can time out from home Wi‑Fi — that’s normal.
+                          </p>
+                          <p className="mt-1 font-mono text-[10px] text-emerald-100/70">
+                            {homeIp} · ws://{homeIp.replace(/:81$/, "")}:81
+                          </p>
+                          <div className="mt-2.5 sm:mt-3">
+                            <PrimaryBtn
+                              tone="ok"
+                              disabled={busy}
+                              onClick={() => {
+                                setHomeHost(homeIp);
+                                void connectHomeFlow();
+                              }}
+                            >
+                              {busy ? "Connecting…" : `Connect home · ${homeIp}`}
+                            </PrimaryBtn>
+                          </div>
+                        </section>
+                      )}
+
+                      {!blocked && softReady && !linked && (
+                        <section className="link-card rounded-2xl border border-[var(--paint)]/35 bg-[var(--paint)]/10 p-3 sm:rounded-3xl sm:p-4">
+                          <p className="text-[8px] uppercase tracking-[0.14em] text-[var(--paint)]">
+                            SoftAP ready
+                          </p>
+                          <p className="mt-1 text-[11px] text-white/75 sm:text-sm">
+                            Phone can reach the car hotspot.
+                          </p>
+                          <div className="mt-2.5 sm:mt-3">
+                            <PrimaryBtn
+                              disabled={busy}
+                              onClick={() => void connectHotspotFlow()}
+                            >
+                              {busy ? "Connecting…" : "Connect hotspot"}
+                            </PrimaryBtn>
+                          </div>
+                        </section>
+                      )}
+
                       <section className="link-card rounded-2xl border border-white/12 bg-white/[0.04] p-3 sm:rounded-3xl sm:p-4">
                         <p className="text-[8px] uppercase tracking-[0.14em] text-white/40 sm:text-[10px] sm:tracking-[0.16em]">
-                          Easy setup
+                          Or pick a path
                         </p>
-                        <p className="mt-1 text-[11px] leading-snug text-white/70 sm:mt-2 sm:text-sm sm:text-white/75">
-                          Pick one path. SoftAP always stays on the car.
-                        </p>
-                        <div className="mt-2.5 grid gap-2 sm:mt-4 sm:gap-3">
+                        <div className="mt-2.5 grid gap-2 sm:mt-3 sm:gap-3">
                           <button
                             type="button"
                             onClick={() => setView("away")}
@@ -477,7 +577,7 @@ export function LinkSettingsModal({
                           >
                             <p className="text-[11px] text-white/90 sm:text-sm">Home · same Wi‑Fi</p>
                             <p className="mt-0.5 text-[9px] text-white/50 sm:mt-1 sm:text-xs">
-                              Save router on car, then connect by LAN IP
+                              {homeIp ? `IP ${homeIp}` : "Save router on car, then connect by LAN IP"}
                             </p>
                           </button>
                         </div>
@@ -490,8 +590,19 @@ export function LinkSettingsModal({
                         </p>
                         <p className="mt-0.5 sm:mt-1">{softApGuessLabel(softProbe)}</p>
                         <p className="mt-0.5 sm:mt-1">
+                          Home:{" "}
+                          <span className="text-white/80">
+                            {homeProbe == null
+                              ? "not checked"
+                              : homeProbe.ok
+                                ? `OK ${homeProbe.ms}ms`
+                                : homeProbe.error || "failed"}
+                          </span>
+                        </p>
+                        <p className="mt-0.5 sm:mt-1">
                           WS: <span className="text-white/80">{wsState}</span>
                           {probing ? " · probing…" : ""}
+                          {wsState === "idle" ? " · not connected (tap Connect)" : ""}
                         </p>
                       </section>
                     </>
