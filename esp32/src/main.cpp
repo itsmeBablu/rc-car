@@ -50,8 +50,10 @@ void setup() {
 }
 
 void loop() {
-  // Control path first
+  // Control path first — ramp motors/servo every tick
   websocket.loop();
+  motors.loop();
+  servo.loop();
   wifi.loop();
   battery.loop();
   ota.loop();

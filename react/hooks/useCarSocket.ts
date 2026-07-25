@@ -6,6 +6,7 @@ import {
   DEFAULT_WS_URL,
   driveMessage,
   lightsMessage,
+  pingMessage,
   steerMessage,
   stopMessage,
 } from "@/lib/protocol";
@@ -31,12 +32,20 @@ export function useCarSocket(options: Options = {}) {
   }>({});
   const wsRef = useRef<WebSocket | null>(null);
   const retryRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pingRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const angleRef = useRef(90);
 
   const clearRetry = () => {
     if (retryRef.current) {
       clearTimeout(retryRef.current);
       retryRef.current = null;
+    }
+  };
+
+  const clearPing = () => {
+    if (pingRef.current) {
+      clearInterval(pingRef.current);
+      pingRef.current = null;
     }
   };
 
@@ -74,6 +83,7 @@ export function useCarSocket(options: Options = {}) {
 
   const connect = useEffectEvent(() => {
     clearRetry();
+    clearPing();
     if (wsRef.current) {
       wsRef.current.onclose = null;
       wsRef.current.close();
@@ -86,7 +96,7 @@ export function useCarSocket(options: Options = {}) {
       ws = new WebSocket(url);
     } catch {
       setState("error");
-      retryRef.current = setTimeout(() => connect(), 800);
+      retryRef.current = setTimeout(() => connect(), 600);
       return;
     }
 
@@ -95,6 +105,10 @@ export function useCarSocket(options: Options = {}) {
     ws.onopen = () => {
       setState("open");
       sendSteer(angleRef.current);
+      clearPing();
+      pingRef.current = setInterval(() => {
+        sendRaw(pingMessage());
+      }, 4000);
     };
 
     ws.onmessage = (ev) => {
@@ -125,15 +139,17 @@ export function useCarSocket(options: Options = {}) {
     };
 
     ws.onclose = () => {
+      clearPing();
       setState("closed");
       wsRef.current = null;
-      retryRef.current = setTimeout(() => connect(), 800);
+      retryRef.current = setTimeout(() => connect(), 600);
     };
   });
 
   useEffect(() => {
     if (!enabled) {
       clearRetry();
+      clearPing();
       wsRef.current?.close();
       wsRef.current = null;
       setState("idle");
@@ -142,6 +158,7 @@ export function useCarSocket(options: Options = {}) {
     connect();
     return () => {
       clearRetry();
+      clearPing();
       if (wsRef.current) {
         wsRef.current.onclose = null;
         wsRef.current.close();

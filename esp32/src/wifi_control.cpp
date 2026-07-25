@@ -8,6 +8,7 @@
 #include <Preferences.h>
 #include <WiFi.h>
 #include <esp_camera.h>
+#include <esp_wifi.h>
 
 static Preferences prefs;
 static WifiControl *gWifi = nullptr;
@@ -253,17 +254,32 @@ String WifiControl::statusJson() const {
   doc["apIp"] = softApIp();
   doc["apClients"] = softApClients();
   doc["home"] = homeConnected();
+  doc["savedSsid"] = _ssid;
+  doc["saved"] = _staWanted;
+
+  // SoftAP client signal (phone ↔ car hotspot)
+  wifi_sta_list_t staList = {};
+  if (esp_wifi_ap_get_sta_list(&staList) == ESP_OK && staList.num > 0) {
+    int best = staList.sta[0].rssi;
+    for (int i = 1; i < staList.num; i++) {
+      if (staList.sta[i].rssi > best) best = staList.sta[i].rssi;
+    }
+    doc["apRssi"] = best;
+  }
+
   if (homeConnected()) {
     doc["ssid"] = WiFi.SSID();
     doc["ip"] = homeIp();
+    doc["rssi"] = WiFi.RSSI();
   } else if (_staWanted) {
     doc["ssid"] = _ssid;
     doc["home"] = false;
-    doc["homeState"] = "connecting";
+    doc["homeState"] = _staPausedForApClients ? "paused_for_ap" : "connecting";
   }
   doc["ws"] = String("ws://") + softApIp() + ":" + String(WS_PORT);
   if (homeConnected()) {
     doc["wsHome"] = String("ws://") + homeIp() + ":" + String(WS_PORT);
+    doc["streamHome"] = String("http://") + homeIp() + "/jpg";
   }
   doc["stream"] = String("http://") + softApIp() + "/jpg";
   if (_batt) {

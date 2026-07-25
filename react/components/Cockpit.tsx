@@ -3,12 +3,17 @@
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { AnalogCluster } from "@/components/AnalogCluster";
 import { CameraView } from "@/components/CameraView";
-import { LinkSettingsModal } from "@/components/LinkSettingsModal";
+import {
+  LinkSettingsModal,
+  type CarStatus,
+} from "@/components/LinkSettingsModal";
 import { MotorPanel } from "@/components/MotorPanel";
+import { SignalBars } from "@/components/SignalBars";
 import { SteeringWheel } from "@/components/SteeringWheel";
 import { useCarSocket } from "@/hooks/useCarSocket";
 import {
   AP_HOST,
+  AP_SSID,
   DEFAULT_WS_URL,
   MOTOR_MAX,
   SERVO_CENTER,
@@ -17,9 +22,11 @@ import {
   loadCarHost,
   loadLinkMode,
   loadStoredWsUrl,
+  rssiToBars,
   saveCarHost,
   saveLinkMode,
   saveStoredWsUrl,
+  upsertSavedNetwork,
   wheelDegToServo,
   type LinkMode,
 } from "@/lib/protocol";
@@ -31,6 +38,7 @@ export function Cockpit() {
   const [host, setHost] = useState("");
   const [wsUrl, setWsUrl] = useState("");
   const [linkEnabled, setLinkEnabled] = useState(false);
+  const [carStatus, setCarStatus] = useState<CarStatus | null>(null);
   const [wheelDeg, setWheelDeg] = useState(0);
   const [servoAngle, setServoAngle] = useState(SERVO_CENTER);
   const [left, setLeft] = useState(0);
@@ -71,10 +79,44 @@ export function Cockpit() {
 
   const linked = wsState === "open";
   const canDrive = linked;
-  const httpBase = hostToHttpBase(
-    mode === "hotspot" ? AP_HOST : host || wsUrl.replace(/^ws:\/\//, ""),
-  );
-  const streamUrl = `${httpBase}/jpg`;
+  const statusHost =
+    mode === "hotspot" ? AP_HOST : host || wsUrl.replace(/^ws:\/\//, "").replace(/:81$/, "");
+  const httpBase = hostToHttpBase(statusHost);
+  const streamUrl =
+    mode === "home" && carStatus?.ip
+      ? `http://${carStatus.ip}/jpg`
+      : `${httpBase}/jpg`;
+
+  const activeRssi =
+    mode === "hotspot" ? carStatus?.apRssi : carStatus?.rssi;
+  const signalBars = rssiToBars(activeRssi, linked);
+
+  const refreshStatus = useEffectEvent(async () => {
+    try {
+      const res = await fetch(`${hostToHttpBase(statusHost)}/status?t=${Date.now()}`, {
+        cache: "no-store",
+        signal: AbortSignal.timeout(3500),
+      });
+      if (!res.ok) return;
+      const j = (await res.json()) as CarStatus;
+      setCarStatus(j);
+      if (typeof j.batt === "number") {
+        setBatteryPct(Math.max(0, Math.min(100, Math.round(j.batt))));
+      }
+      if (typeof j.usb === "boolean") setUsbPower(j.usb);
+      if (typeof j.charging === "boolean") setCharging(j.charging);
+      if (typeof j.full === "boolean") setChargeFull(j.full);
+    } catch {
+      /* stay with last status — WS still drives */
+    }
+  });
+
+  useEffect(() => {
+    if (!linkEnabled) return;
+    void refreshStatus();
+    const id = setInterval(() => void refreshStatus(), linked ? 4000 : 7000);
+    return () => clearInterval(id);
+  }, [linkEnabled, linked, statusHost, refreshStatus]);
 
   useEffect(() => {
     if (typeof telemetry.batt === "number") {
@@ -92,6 +134,13 @@ export function Cockpit() {
     setWsUrl(url);
     saveStoredWsUrl(url);
     setLinkEnabled(true);
+    upsertSavedNetwork({
+      mode: "hotspot",
+      host: AP_HOST,
+      label: AP_SSID,
+      ssid: AP_SSID,
+    });
+    void refreshStatus();
   };
 
   const connectHome = (h: string) => {
@@ -103,6 +152,12 @@ export function Cockpit() {
     setWsUrl(url);
     saveStoredWsUrl(url);
     setLinkEnabled(true);
+    upsertSavedNetwork({
+      mode: "home",
+      host: h,
+      label: carStatus?.ssid || h,
+      ssid: carStatus?.ssid,
+    });
   };
 
   const disconnect = () => {
@@ -197,21 +252,26 @@ export function Cockpit() {
     ) / 10;
 
   const wifiLabel =
-    mode === "hotspot" ? `${AP_HOST}:81` : host ? `${host}` : wsUrl;
+    mode === "hotspot"
+      ? `Hotspot · ${AP_HOST}`
+      : host
+        ? `Wi‑Fi · ${host}`
+        : wsUrl;
 
   return (
     <div className="cockpit cockpit-graph relative flex h-dvh max-h-dvh flex-col overflow-hidden text-white">
-      <header className="pointer-events-none absolute inset-x-0 top-0 z-20 flex items-start justify-start px-3 pt-2 sm:px-4">
-        <div className="brand-glass pointer-events-none flex items-center gap-2.5 px-2.5 py-1.5">
+      <header className="pointer-events-none absolute inset-x-0 top-0 z-20 flex items-start justify-start px-3 pt-1.5 sm:px-4">
+          <div className="brand-glass pointer-events-none flex items-center gap-2 px-2 py-1">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src="/rc.svg"
             alt=""
-            className="brand-rc-logo h-10 w-auto sm:h-11"
+            className="brand-rc-logo h-7 w-auto sm:h-8"
             draggable={false}
           />
-          <p className="brand-title font-[family-name:var(--font-display)] text-sm tracking-[0.14em] text-[var(--paint)]">
-            GT2 RS
+          <p className="brand-title font-[family-name:var(--font-display)] flex items-center gap-1.5 text-[11px] tracking-[0.14em] text-[var(--paint)] sm:text-xs">
+            <span>GT2 RS</span>
+            <SignalBars bars={signalBars} compact />
           </p>
         </div>
       </header>
@@ -223,11 +283,16 @@ export function Cockpit() {
         host={host}
         wsState={wsState}
         linked={linked}
+        carStatus={carStatus}
+        signalBars={signalBars}
         debug={debug}
         onDebugChange={setDebug}
         onConnectHotspot={connectHotspot}
         onConnectHome={connectHome}
         onDisconnect={disconnect}
+        onRefreshStatus={async () => {
+          await refreshStatus();
+        }}
       />
 
       <main className="cockpit-layout relative z-10 grid min-h-0 flex-1 gap-0 p-0">
