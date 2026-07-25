@@ -14,6 +14,9 @@ import { ToggleSwitch } from "@/components/ToggleSwitch";
 import type { ConnectionState } from "@/hooks/useCarSocket";
 import {
   buildLinkDebugReport,
+  connectSavedCarWifi,
+  fetchSavedCarWifi,
+  forgetCarWifi,
   getNetworkKind,
   httpsBlocksLocalCar,
   isHttpsApp,
@@ -23,9 +26,13 @@ import {
   openDeviceWifiSettings,
   probeCarHost,
   probeSoftAp,
+  saveCarWifi,
+  scanSoftApNetworks,
   softApGuessLabel,
   type NetKind,
   type ProbeResult,
+  type SavedCarWifi,
+  type ScannedNetwork,
 } from "@/lib/linkNetwork";
 import {
   AP_HOST,
@@ -129,7 +136,14 @@ export function LinkSettingsModal({
   const [mounted, setMounted] = useState(open);
   const [shown, setShown] = useState(false);
   const [geom, setGeom] = useState<CSSProperties>({});
+  const [scanNets, setScanNets] = useState<ScannedNetwork[]>([]);
+  const [scanning, setScanning] = useState(false);
+  const [savedCarNets, setSavedCarNets] = useState<SavedCarWifi[]>([]);
+  const [showJoinWifi, setShowJoinWifi] = useState(false);
   const shellRef = useRef<HTMLDivElement>(null);
+  const wasOpen = useRef(false);
+  const onCarStatusRef = useRef(onCarStatus);
+  onCarStatusRef.current = onCarStatus;
 
   const pushLog = (text: string, tone: LogLine["tone"] = "info") => {
     setLog((prev) => [{ t: Date.now(), text, tone }, ...prev].slice(0, 16));
@@ -188,20 +202,38 @@ export function LinkSettingsModal({
   }, [open]);
 
   useEffect(() => {
-    if (!open) return;
-    setView("guide");
+    if (!open) {
+      wasOpen.current = false;
+      return;
+    }
+    const justOpened = !wasOpen.current;
+    wasOpen.current = true;
+
+    // Only reset the tab when Link opens — not when host/status updates mid-flow
+    if (justOpened) {
+      setView("guide");
+      setMsg(null);
+      setScanNets([]);
+      setSavedCarNets([]);
+      setShowJoinWifi(false);
+      setSoftProbe(null);
+      setHomeProbe(null);
+      setHttps(isHttpsApp());
+      setPwa(isStandalonePwa());
+      setNetKind(getNetworkKind());
+      setSaved(loadSavedNetworks());
+    }
+
     const knownHome =
       (host || "").trim() ||
       (carStatus?.home && carStatus.ip ? carStatus.ip : "") ||
       "";
-    setHomeHost(knownHome || host || "");
-    setSaved(loadSavedNetworks());
-    setMsg(null);
-    setHttps(isHttpsApp());
-    setPwa(isStandalonePwa());
-    setNetKind(getNetworkKind());
-    setSoftProbe(null);
-    setHomeProbe(null);
+    if (justOpened || !homeHost.trim()) {
+      setHomeHost(knownHome || host || "");
+    }
+
+    if (!justOpened) return;
+
     void (async () => {
       setProbing(true);
       pushLog("Checking SoftAP + home…", "info");
@@ -216,12 +248,14 @@ export function LinkSettingsModal({
       setHomeProbe(home);
 
       if (soft.ok && soft.status) {
-        onCarStatus?.(soft.status);
+        onCarStatusRef.current?.(soft.status);
         pushLog(
           `SoftAP OK ${soft.ms}ms · home=${soft.status.home} ip=${soft.status.ip || "—"}`,
           "ok",
         );
         if (soft.status.ip) setHomeHost(soft.status.ip);
+        if (soft.status.savedSsid) setCarSsid(soft.status.savedSsid);
+        if (soft.status.networks?.length) setSavedCarNets(soft.status.networks);
       } else {
         pushLog(
           `SoftAP unreachable (${soft.error || "timeout"}) — normal if phone is on home Wi‑Fi`,
@@ -230,7 +264,7 @@ export function LinkSettingsModal({
       }
 
       if (home?.ok && home.status) {
-        onCarStatus?.(home.status);
+        onCarStatusRef.current?.(home.status);
         const ip = home.status.ip || homeTarget;
         if (ip) setHomeHost(ip);
         pushLog(`Home car OK ${home.ms}ms @ ${ip}`, "ok");
@@ -244,7 +278,7 @@ export function LinkSettingsModal({
       setProbing(false);
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, host, onCarStatus]);
+  }, [open, host]);
 
   useEffect(() => {
     if (!open) return;
@@ -274,6 +308,191 @@ export function LinkSettingsModal({
     Boolean(homeProbe?.ok) ||
     Boolean(carStatus?.home && carStatus.ip && wsState === "idle");
   const softReady = Boolean(softProbe?.ok);
+  /** SoftAP reachable — drive first; place Wi‑Fi is optional later */
+  const onSoftApLink =
+    softReady ||
+    (linked && mode === "hotspot") ||
+    Boolean(softProbe?.ok && softProbe.status?.ap);
+
+  const connectedLabel = (() => {
+    if (!linked) {
+      if (softReady) return { title: "Not linked yet", detail: `SoftAP reachable · ${AP_SSID}` };
+      if (carStatus?.home && carStatus.ssid)
+        return {
+          title: "Car on place Wi‑Fi",
+          detail: `${carStatus.ssid}${carStatus.ip ? ` · ${carStatus.ip}` : ""}`,
+        };
+      return null;
+    }
+    if (mode === "hotspot") {
+      const place =
+        carStatus?.home && carStatus.ssid
+          ? ` · car also on ${carStatus.ssid}`
+          : carStatus?.homeState === "connecting" && carStatus.ssid
+            ? ` · car joining ${carStatus.ssid}…`
+            : "";
+      return {
+        title: "Connected · SoftAP hotspot",
+        detail: `${AP_SSID} · ws://${AP_HOST}:81${place}`,
+      };
+    }
+    const ssid = carStatus?.ssid || carStatus?.savedSsid || "place Wi‑Fi";
+    const ip = carStatus?.ip || homeIp || host || "—";
+    return {
+      title: "Connected · place Wi‑Fi",
+      detail: `${ssid} · ${ip}`,
+    };
+  })();
+
+  const rssiBars = (rssi: number) => {
+    if (rssi >= -55) return "▂▄▆█";
+    if (rssi >= -65) return "▂▄▆░";
+    if (rssi >= -75) return "▂▄░░";
+    return "▂░░░";
+  };
+
+  const refreshSavedNets = async () => {
+    const r = await fetchSavedCarWifi();
+    if (r.ok) setSavedCarNets(r.networks);
+    return r;
+  };
+
+  const renderSavedNets = () => {
+    const nets =
+      savedCarNets.length > 0
+        ? savedCarNets
+        : carStatus?.networks || [];
+    if (!nets.length) return null;
+    return (
+      <ul className="mt-2 max-h-32 overflow-y-auto rounded-xl border border-white/10 bg-black/25 sm:max-h-40">
+        {nets
+          .slice()
+          .sort((a, b) => (b.lastUsed || 0) - (a.lastUsed || 0))
+          .map((n) => (
+            <li
+              key={n.ssid}
+              className="flex items-center gap-2 border-b border-white/5 px-2.5 py-1.5 last:border-0 sm:px-3 sm:py-2"
+            >
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-[11px] text-white/85 sm:text-sm">
+                  {n.ssid}
+                  {n.active ? (
+                    <span className="ml-1 text-[9px] text-emerald-300">active</span>
+                  ) : null}
+                </p>
+              </div>
+              <button
+                type="button"
+                className="shrink-0 text-[9px] text-sky-200 underline sm:text-[10px]"
+                disabled={busy}
+                onClick={() =>
+                  void (async () => {
+                    setBusy(true);
+                    const r = await connectSavedCarWifi(n.ssid);
+                    pushLog(
+                      r.ok ? `Joining saved ${n.ssid}` : r.error || "Join failed",
+                      r.ok ? "ok" : "err",
+                    );
+                    setTimeout(() => void runSoftProbe(), 3000);
+                    setBusy(false);
+                  })()
+                }
+              >
+                Join
+              </button>
+              <button
+                type="button"
+                className="shrink-0 text-[9px] text-rose-300 underline sm:text-[10px]"
+                disabled={busy}
+                onClick={() =>
+                  void (async () => {
+                    setBusy(true);
+                    const r = await forgetCarWifi(n.ssid);
+                    if (r.ok) {
+                      setSavedCarNets(r.networks || []);
+                      pushLog(`Deleted ${n.ssid}`, "ok");
+                    } else {
+                      pushLog(r.error || "Delete failed", "err");
+                    }
+                    setBusy(false);
+                  })()
+                }
+              >
+                Delete
+              </button>
+            </li>
+          ))}
+      </ul>
+    );
+  };
+
+  const renderJoinWifiCard = () => (
+    <section className="link-card rounded-2xl border border-sky-400/30 bg-sky-400/10 p-3 sm:rounded-3xl sm:p-4">
+      <p className="text-[8px] uppercase tracking-[0.14em] text-sky-200/90">
+        Place Wi‑Fi on car (optional)
+      </p>
+      <p className="mt-1 text-[11px] leading-snug text-white/70 sm:text-sm">
+        SoftAP stays on. Save up to 10 places — if full, the least-recently used is
+        removed when you join a new one. Drive first; add Wi‑Fi when you’re ready.
+      </p>
+      {renderSavedNets()}
+      <div className="mt-2.5 flex flex-col gap-1.5 sm:mt-3 sm:gap-2">
+        <PrimaryBtn
+          tone="muted"
+          disabled={scanning || busy || blocked}
+          onClick={() => void runWifiScan()}
+        >
+          {scanning ? "Scanning…" : "Scan nearby Wi‑Fi"}
+        </PrimaryBtn>
+        {scanNets.length > 0 && (
+          <ul className="max-h-36 overflow-y-auto rounded-xl border border-white/10 bg-black/25 sm:max-h-44">
+            {scanNets.map((n) => (
+              <li key={`${n.ssid}-${n.rssi}`}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCarSsid(n.ssid);
+                    pushLog(`Selected ${n.ssid} (${n.rssi} dBm)`, "info");
+                  }}
+                  className={`flex w-full items-center justify-between gap-2 px-2.5 py-1.5 text-left text-[11px] sm:px-3 sm:py-2 sm:text-sm ${
+                    carSsid === n.ssid
+                      ? "bg-[var(--paint)]/20 text-[var(--paint)]"
+                      : "text-white/80 hover:bg-white/5"
+                  }`}
+                >
+                  <span className="min-w-0 truncate">{n.ssid}</span>
+                  <span className="shrink-0 font-mono text-[9px] text-white/45 sm:text-[10px]">
+                    {rssiBars(n.rssi)} {n.rssi}
+                    {n.secure ? "" : " · open"}
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+        <input
+          value={carSsid}
+          onChange={(e) => setCarSsid(e.target.value)}
+          placeholder="SSID (2.4 GHz)"
+          className="link-input rounded-lg border border-white/15 bg-black/40 px-2.5 py-1.5 text-[11px] text-white outline-none focus:border-[var(--paint)] sm:rounded-xl sm:px-3 sm:py-2.5 sm:text-sm"
+        />
+        <input
+          value={carPass}
+          onChange={(e) => setCarPass(e.target.value)}
+          type="password"
+          placeholder="Password"
+          className="link-input rounded-lg border border-white/15 bg-black/40 px-2.5 py-1.5 text-[11px] text-white outline-none focus:border-[var(--paint)] sm:rounded-xl sm:px-3 sm:py-2.5 sm:text-sm"
+        />
+        <PrimaryBtn
+          tone="ok"
+          disabled={!carSsid.trim() || busy || blocked}
+          onClick={() => void saveWifiOnCar()}
+        >
+          {busy ? "Saving…" : "Save & join on car"}
+        </PrimaryBtn>
+      </div>
+    </section>
+  );
 
   const runSoftProbe = async () => {
     setProbing(true);
@@ -281,13 +500,60 @@ export function LinkSettingsModal({
     const r = await probeSoftAp();
     setSoftProbe(r);
     if (r.ok && r.status) {
-      onCarStatus?.(r.status);
+      onCarStatusRef.current?.(r.status);
       pushLog(`SoftAP OK ${r.ms}ms home=${r.status.home} ip=${r.status.ip || "—"}`, "ok");
+      if (r.status.ip) setHomeHost(r.status.ip);
+      if (r.status.savedSsid) setCarSsid(r.status.savedSsid);
     } else {
       pushLog(r.error || "SoftAP probe failed", "err");
     }
     setProbing(false);
     return r;
+  };
+
+  const runWifiScan = async () => {
+    if (httpsBlocksLocalCar()) {
+      setMsg(`Scan needs SoftAP — open http://${AP_HOST}/ or use HTTP localhost.`);
+      return;
+    }
+    setScanning(true);
+    setMsg(null);
+    pushLog("Scanning Wi‑Fi from car…", "info");
+    const r = await scanSoftApNetworks();
+    setScanning(false);
+    if (!r.ok) {
+      pushLog(r.error || "Scan failed", "err");
+      setMsg("Scan failed — stay on SoftAP and try again.");
+      return;
+    }
+    setScanNets(r.networks);
+    pushLog(`Found ${r.networks.length} networks`, "ok");
+    if (!r.networks.length) setMsg("No networks found. Try again near the router.");
+  };
+
+  const saveWifiOnCar = async () => {
+    const ssid = carSsid.trim();
+    if (!ssid) return;
+    setBusy(true);
+    setMsg(null);
+    pushLog(`Save Wi‑Fi on car → ${ssid}`, "info");
+    const r = await saveCarWifi(ssid, carPass);
+    if (!r.ok) {
+      pushLog(r.error || "Save failed", "err");
+      setMsg(
+        blocked
+          ? `Can’t POST from HTTPS — open http://${AP_HOST}/ and save there.`
+          : "Join SoftAP first, then save.",
+      );
+      setBusy(false);
+      return;
+    }
+    pushLog("Wi‑Fi saved on car — STA joining…", "ok");
+    if (r.networks) setSavedCarNets(r.networks);
+    else void refreshSavedNets();
+    setMsg("Saved (max 10 places). SoftAP stays up — you can keep driving.");
+    setTimeout(() => void runSoftProbe(), 4000);
+    setBusy(false);
   };
 
   const changeWifi = () => {
@@ -350,7 +616,7 @@ export function LinkSettingsModal({
     const staIp = probe.status?.ip?.trim();
     const connectHost = staIp && staIp !== "0.0.0.0" ? staIp : h;
     if (staIp) setHomeHost(staIp);
-    onCarStatus?.(probe.status ?? null);
+    onCarStatusRef.current?.(probe.status ?? null);
     onConnectHome(connectHost);
     pushLog(`WS → ${hostToWsUrl(connectHost)}`, "info");
     setBusy(false);
@@ -455,6 +721,7 @@ export function LinkSettingsModal({
                   onClick={() => {
                     setView(id);
                     if (id === "debug") refreshDebug();
+                    if (id === "home" && softProbe?.ok) void refreshSavedNets();
                   }}
                   className={`link-fs-tab shrink-0 px-2.5 py-1.5 text-[10px] tracking-wide sm:px-3 sm:py-2.5 sm:text-xs ${
                     view === id
@@ -475,17 +742,19 @@ export function LinkSettingsModal({
                   </p>
                   <p className="mt-1 text-[10px] text-amber-100/75 sm:text-xs">
                     Browsers block local <code className="text-amber-50">ws://</code> /{" "}
-                    <code className="text-amber-50">http://</code> from HTTPS. Join{" "}
-                    <strong>{AP_SSID}</strong>, then open the car’s own page.
+                    <code className="text-amber-50">http://</code> from HTTPS. Use{" "}
+                    <strong>http://</strong> to open this app (not the car setup form). Join{" "}
+                    <strong>{AP_SSID}</strong>, then Link → Connect hotspot.
                   </p>
                   <div className="mt-2.5 sm:mt-3">
                     <PrimaryBtn
+                      tone="muted"
                       onClick={() => {
-                        pushLog("Opening SoftAP car page", "info");
+                        pushLog("Opening SoftAP status (drive-first page)", "info");
                         openCarSoftApPage();
                       }}
                     >
-                      Open car page · http://{AP_HOST}/
+                      SoftAP status · http://{AP_HOST}/
                     </PrimaryBtn>
                   </div>
                 </div>
@@ -493,6 +762,24 @@ export function LinkSettingsModal({
 
               {view === "guide" && (
                 <div className="link-stack flex flex-col gap-2.5 sm:gap-4">
+                  {connectedLabel && (
+                    <section className="link-card rounded-2xl border border-white/15 bg-white/[0.05] p-3 sm:rounded-3xl sm:p-4">
+                      <p className="text-[8px] uppercase tracking-[0.14em] text-white/40">
+                        Connected to
+                      </p>
+                      <p className="mt-1 text-[12px] text-white/90 sm:text-sm">{connectedLabel.title}</p>
+                      <p className="mt-0.5 font-mono text-[10px] leading-snug text-white/55 sm:text-xs">
+                        {connectedLabel.detail}
+                      </p>
+                      {typeof carStatus?.savedCount === "number" && (
+                        <p className="mt-1 text-[9px] text-white/40 sm:text-[10px]">
+                          Saved places on car: {carStatus.savedCount}/
+                          {carStatus.savedMax || 10}
+                        </p>
+                      )}
+                    </section>
+                  )}
+
                   {linked ? (
                     <section className="link-card rounded-2xl border border-emerald-400/35 bg-emerald-400/10 p-3 sm:rounded-3xl sm:p-4">
                       <p className="text-[11px] text-emerald-100 sm:text-sm">You’re linked. Close and drive.</p>
@@ -607,6 +894,30 @@ export function LinkSettingsModal({
                       </section>
                     </>
                   )}
+
+                  {/* Drive first — place Wi‑Fi only after link, on demand */}
+                  {!blocked && onSoftApLink && linked && mode === "hotspot" && (
+                    <>
+                      {!showJoinWifi ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setShowJoinWifi(true);
+                            void refreshSavedNets();
+                          }}
+                          className="link-choice rounded-xl border border-white/12 bg-white/[0.03] p-2.5 text-left text-[11px] text-white/70 sm:rounded-2xl sm:p-3 sm:text-sm"
+                        >
+                          Later · add place Wi‑Fi (home / café / …)
+                          <span className="mt-0.5 block text-[9px] text-white/40 sm:text-xs">
+                            Optional — SoftAP stays on. Up to 10 saved networks.
+                          </span>
+                        </button>
+                      ) : (
+                        renderJoinWifiCard()
+                      )}
+                    </>
+                  )}
+
                   {msg && <p className="text-[10px] text-amber-200/90 sm:text-xs">{msg}</p>}
                 </div>
               )}
@@ -684,78 +995,15 @@ export function LinkSettingsModal({
                       Home
                     </h2>
                     <p className="mt-0.5 text-[10px] leading-snug text-white/55 sm:mt-1 sm:text-sm">
-                      SoftAP stays up. Home STA joins your router in parallel.
-                    </p>
+                    SoftAP stays up. Save place Wi‑Fi later (up to 10). Then connect by LAN IP.
+                  </p>
                   </div>
 
-                  <section className="link-card rounded-xl border border-white/10 bg-black/20 p-2.5 sm:rounded-2xl sm:p-3">
-                    <p className="text-[8px] uppercase tracking-wider text-[var(--paint)] sm:text-[10px]">
-                      1 · Teach car (once)
-                    </p>
-                    <p className="mt-0.5 text-[10px] text-white/50 sm:mt-1 sm:text-xs">
-                      Join SoftAP, open car page, or save here:
-                    </p>
-                    <div className="mt-2 flex flex-col gap-1.5 sm:mt-3 sm:gap-2">
-                      <input
-                        value={carSsid}
-                        onChange={(e) => setCarSsid(e.target.value)}
-                        placeholder="Home SSID (2.4 GHz)"
-                        className="link-input rounded-lg border border-white/15 bg-black/40 px-2.5 py-1.5 text-[11px] text-white outline-none focus:border-[var(--paint)] sm:rounded-xl sm:px-3 sm:py-2.5 sm:text-sm"
-                      />
-                      <input
-                        value={carPass}
-                        onChange={(e) => setCarPass(e.target.value)}
-                        type="password"
-                        placeholder="Password"
-                        className="link-input rounded-lg border border-white/15 bg-black/40 px-2.5 py-1.5 text-[11px] text-white outline-none focus:border-[var(--paint)] sm:rounded-xl sm:px-3 sm:py-2.5 sm:text-sm"
-                      />
-                      <PrimaryBtn
-                        tone="muted"
-                        disabled={!carSsid.trim() || busy}
-                        onClick={() =>
-                          void (async () => {
-                            setBusy(true);
-                            try {
-                              const body = new URLSearchParams({
-                                ssid: carSsid.trim(),
-                                pass: carPass,
-                              });
-                              const res = await fetch(`http://${AP_HOST}/wifi`, {
-                                method: "POST",
-                                body,
-                                mode: "cors",
-                              });
-                              if (!res.ok) throw new Error(`HTTP ${res.status}`);
-                              pushLog("Home Wi‑Fi saved on car — STA joining…", "ok");
-                              setMsg("Saved on car. Wait ~15s, then Check SoftAP for home:true + ip.");
-                              setTimeout(() => void runSoftProbe(), 4000);
-                            } catch (e) {
-                              const err = e instanceof Error ? e.message : String(e);
-                              pushLog(`Save failed: ${err}`, "err");
-                              setMsg(
-                                blocked
-                                  ? "Can’t POST from HTTPS — open http://192.168.4.1/ and save there."
-                                  : "Join SoftAP first, then save.",
-                              );
-                            }
-                            setBusy(false);
-                          })()
-                        }
-                      >
-                        Save home Wi‑Fi on car
-                      </PrimaryBtn>
-                      <a
-                        href={`http://${AP_HOST}/`}
-                        className="text-center text-[10px] text-white/45 underline sm:text-xs"
-                      >
-                        Or open car setup page
-                      </a>
-                    </div>
-                  </section>
+                  {renderJoinWifiCard()}
 
                   <section className="link-card rounded-xl border border-white/10 bg-black/20 p-2.5 sm:rounded-2xl sm:p-3">
                     <p className="text-[8px] uppercase tracking-wider text-[var(--paint)] sm:text-[10px]">
-                      2 · Connect phone on home Wi‑Fi
+                      Connect phone on home Wi‑Fi
                     </p>
                     <label className="mt-1.5 flex flex-col gap-0.5 text-[9px] text-white/45 sm:mt-2 sm:gap-1 sm:text-xs">
                       Car LAN IP

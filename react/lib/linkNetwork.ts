@@ -1,4 +1,6 @@
-import { AP_HOST, AP_SSID, hostToHttpBase, type CarStatus } from "@/lib/protocol";
+import { AP_HOST, AP_SSID, hostToHttpBase, type CarStatus, type SavedCarWifi } from "@/lib/protocol";
+
+export type { SavedCarWifi };
 
 export type NetKind = "wifi" | "cellular" | "ethernet" | "other" | "unknown";
 
@@ -145,6 +147,127 @@ export async function probeSoftAp(): Promise<ProbeResult> {
   return probeCarHost(AP_HOST);
 }
 
+export type ScannedNetwork = {
+  ssid: string;
+  rssi: number;
+  secure: boolean;
+};
+
+export async function scanSoftApNetworks(
+  timeoutMs = 12000,
+): Promise<{ ok: boolean; networks: ScannedNetwork[]; error?: string }> {
+  try {
+    const res = await fetch(`http://${AP_HOST}/scan?t=${Date.now()}`, {
+      cache: "no-store",
+      mode: "cors",
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    if (!res.ok) return { ok: false, networks: [], error: `HTTP ${res.status}` };
+    const j = (await res.json()) as {
+      networks?: ScannedNetwork[];
+      error?: string;
+    };
+    const networks = (j.networks || [])
+      .filter((n) => n.ssid && n.ssid !== AP_SSID)
+      .sort((a, b) => b.rssi - a.rssi);
+    return { ok: true, networks, error: j.error };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return { ok: false, networks: [], error: msg };
+  }
+}
+
+export async function saveCarWifi(
+  ssid: string,
+  pass: string,
+): Promise<{ ok: boolean; networks?: SavedCarWifi[]; error?: string }> {
+  try {
+    const body = new URLSearchParams({ ssid, pass, json: "1" });
+    const res = await fetch(`http://${AP_HOST}/wifi`, {
+      method: "POST",
+      body,
+      mode: "cors",
+      headers: { Accept: "application/json" },
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!res.ok) return { ok: false, error: `HTTP ${res.status}` };
+    const j = (await res.json().catch(() => null)) as {
+      networks?: SavedCarWifi[];
+    } | null;
+    return { ok: true, networks: j?.networks };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return { ok: false, error: msg };
+  }
+}
+
+export async function fetchSavedCarWifi(): Promise<{
+  ok: boolean;
+  networks: SavedCarWifi[];
+  max?: number;
+  error?: string;
+}> {
+  try {
+    const res = await fetch(`http://${AP_HOST}/networks?t=${Date.now()}`, {
+      cache: "no-store",
+      mode: "cors",
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!res.ok) return { ok: false, networks: [], error: `HTTP ${res.status}` };
+    const j = (await res.json()) as {
+      networks?: SavedCarWifi[];
+      max?: number;
+    };
+    return { ok: true, networks: j.networks || [], max: j.max };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return { ok: false, networks: [], error: msg };
+  }
+}
+
+export async function forgetCarWifi(
+  ssid?: string,
+): Promise<{ ok: boolean; networks?: SavedCarWifi[]; error?: string }> {
+  try {
+    const body = new URLSearchParams({ json: "1" });
+    if (ssid) body.set("ssid", ssid);
+    const res = await fetch(`http://${AP_HOST}/forget`, {
+      method: "POST",
+      body,
+      mode: "cors",
+      headers: { Accept: "application/json" },
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!res.ok) return { ok: false, error: `HTTP ${res.status}` };
+    const j = (await res.json().catch(() => null)) as {
+      networks?: SavedCarWifi[];
+    } | null;
+    return { ok: true, networks: j?.networks };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return { ok: false, error: msg };
+  }
+}
+
+export async function connectSavedCarWifi(
+  ssid: string,
+): Promise<{ ok: boolean; error?: string }> {
+  try {
+    const body = new URLSearchParams({ ssid });
+    const res = await fetch(`http://${AP_HOST}/networks/connect`, {
+      method: "POST",
+      body,
+      mode: "cors",
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!res.ok) return { ok: false, error: `HTTP ${res.status}` };
+    return { ok: true };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return { ok: false, error: msg };
+  }
+}
+
 export function softApGuessLabel(probe: ProbeResult | null): string {
   if (!probe) return "Not checked yet";
   if (probe.ok) {
@@ -155,7 +278,10 @@ export function softApGuessLabel(probe: ProbeResult | null): string {
 
 export function openCarSoftApPage() {
   if (typeof window === "undefined") return;
-  window.location.href = `http://${AP_HOST}/`;
+  // Prefer new tab so we don't yank the React app away mid-drive setup
+  const url = `http://${AP_HOST}/`;
+  const w = window.open(url, "_blank", "noopener,noreferrer");
+  if (!w) window.location.href = url;
 }
 
 export type LinkDebugSnapshot = {
