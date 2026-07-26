@@ -319,25 +319,25 @@ export function Cockpit() {
   return (
     <div className="cockpit cockpit-graph relative flex h-dvh max-h-dvh flex-col overflow-hidden text-white">
       <HttpAccessBanner />
-      <footer className="pointer-events-none absolute inset-x-0 bottom-0 z-20 flex items-end justify-start px-3 pb-[max(0.5rem,env(safe-area-inset-bottom))] sm:px-4">
-        <div className="brand-liquid-wrap brand-liquid-wrap--footer pointer-events-none">
+      <header className="pointer-events-none absolute inset-x-0 top-0 z-20 flex items-start justify-start px-3 pt-1.5 sm:px-4">
+        <div className="brand-liquid-wrap pointer-events-none">
           <Glass borderRadius={10} zIndex={2} className="h-full w-full">
-            <div className="lg-fill lg-fill-row gap-2 px-2.5 py-1">
+            <div className="lg-fill lg-fill-row gap-2 px-2 py-1">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src="/rc.svg"
                 alt=""
-                className="brand-rc-logo h-8 w-auto sm:h-9"
+                className="brand-rc-logo h-7 w-auto sm:h-8"
                 draggable={false}
               />
-              <p className="brand-title font-[family-name:var(--font-display)] flex items-center gap-1.5 text-xs tracking-[0.14em] text-[var(--paint)] sm:text-[13px]">
+              <p className="brand-title font-[family-name:var(--font-display)] flex items-center gap-1.5 text-[11px] tracking-[0.14em] text-[var(--paint)] sm:text-xs">
                 <span>GT2 RS</span>
                 <SignalBars bars={signalBars} compact />
               </p>
             </div>
           </Glass>
         </div>
-      </footer>
+      </header>
 
       <LinkSettingsModal
         open={settingsOpen}
