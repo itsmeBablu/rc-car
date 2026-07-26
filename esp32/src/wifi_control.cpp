@@ -1,9 +1,11 @@
 #include "wifi_control.h"
+#include "wifi_drive_page.h"
 #include "battery_monitor.h"
 #include "camera_stream.h"
 #include "config.h"
 
 #include <ArduinoJson.h>
+#include <DNSServer.h>
 #include <ESPmDNS.h>
 #include <Preferences.h>
 #include <WiFi.h>
@@ -166,6 +168,65 @@ void WifiControl::startSoftAp() {
   _apUp = ok;
   Serial.printf("[wifi] SoftAP %s — \"%s\" / %s @ %s\n", ok ? "UP" : "FAIL",
                 AP_SSID, AP_PASS, softApIp().c_str());
+  ensureDns();
+}
+
+void WifiControl::ensureDns() {
+  if (!_apUp) return;
+  if (_dnsRunning) {
+    _dns.stop();
+    _dnsRunning = false;
+  }
+  // Captive portal: any hostname → SoftAP IP (phone login sheet / Not Found fix)
+  _dns.start(53, "*", AP_IP);
+  _dnsRunning = true;
+  Serial.println("[wifi] SoftAP DNS * → 192.168.4.1");
+}
+
+String WifiControl::portalHtml() const {
+  String html;
+  html.reserve(2000);
+  html += F("<!DOCTYPE html><html><head><meta charset=utf-8>"
+            "<meta name=viewport content='width=device-width,initial-scale=1'>"
+            "<title>RC Car</title><style>"
+            "body{font:16px system-ui;background:#111;color:#eee;margin:1.2rem;line-height:1.45}"
+            "code{font-family:ui-monospace,monospace;font-size:13px}"
+            "a{color:#c9a227} .ok{color:#6ee7b7} .muted{color:#aaa} .warn{color:#fbbf24}"
+            ".box{border:1px solid #333;border-radius:12px;padding:1rem;margin:1rem 0;background:#1a1a1a}"
+            "button{background:#c9a227;border:0;color:#111;font-weight:700;padding:.85rem 1rem;"
+            "border-radius:10px;width:100%;font-size:16px;margin:.35rem 0}"
+            "button.sec{background:#222;color:#eee;border:1px solid #444}"
+            "</style></head><body>");
+  html += F("<h1>Porsche RC Car</h1>");
+  html += F("<div class=box><p class=ok><b>You are on the car hotspot.</b></p>"
+            "<p>Network: <code>");
+  html += AP_SSID;
+  html += F("</code> / <code>");
+  html += AP_PASS;
+  html += F("</code><br>IP: <code>");
+  html += softApIp();
+  html += F("</code></p>"
+            "<p class=warn><b>iPhone Home Screen / Vercel app cannot drive SoftAP</b> "
+            "(HTTPS blocks motors). Use the Drive page below on this HTTP site.</p>"
+            "<p><a href=/drive><button type=button>DRIVE NOW</button></a></p>"
+            "</div>");
+  if (homeConnected()) {
+    html += F("<p class=ok>Car also on place Wi-Fi: <code>");
+    html += WiFi.SSID();
+    html += F("</code> @ <code>");
+    html += homeIp();
+    html += F("</code></p>");
+  } else if (_staWanted && _ssid.length()) {
+    html += F("<p class=muted>Car is trying place Wi-Fi: <code>");
+    html += _ssid;
+    html += F("</code></p>");
+  }
+  html += F("<div class=box><p class=muted>Optional — teach the car home / cafe Wi-Fi. "
+            "SoftAP stays on. Saving here does not control the car.</p>"
+            "<p><a href=/setup><button class=sec type=button>Wi-Fi setup for the car</button></a></p></div>");
+  html += F("<p class=muted><a href=/drive>Drive</a> · <a href=/status>status</a> · "
+            "<a href=/networks>saved</a></p></body></html>");
+  return html;
 }
 
 String WifiControl::softApIp() const {
@@ -197,47 +258,48 @@ void WifiControl::setupHttp() {
     _http.send(200, "application/json", networksJson());
   });
 
-  // Drive-first SoftAP landing — Wi-Fi setup is optional (/setup)
+  // Drive-first SoftAP landing — NO password form (stops captive-portal loops)
   _http.on("/", HTTP_GET, [this]() {
     sendCors(_http);
-    String html;
-    html.reserve(1600);
-    html += F("<!DOCTYPE html><html><head><meta charset=utf-8>"
-              "<meta name=viewport content='width=device-width,initial-scale=1'>"
-              "<title>RC Car</title><style>"
-              "body{font:15px system-ui;background:#111;color:#eee;margin:1.2rem;line-height:1.45}"
-              "code{font-family:ui-monospace,monospace;font-size:12px}"
-              "a{color:#c9a227} .ok{color:#6ee7b7} .muted{color:#aaa}"
-              ".box{border:1px solid #333;border-radius:12px;padding:1rem;margin:1rem 0;background:#1a1a1a}"
-              "button{background:#c9a227;border:0;color:#111;font-weight:600;padding:.6rem 1rem;border-radius:8px}"
-              "</style></head><body>");
-    html += F("<h1>Porsche RC Car</h1>");
-    html += F("<div class=box><p class=ok><b>Drive first</b> — SoftAP is ready.</p>"
-              "<p>In the React app over <b>HTTP</b> (not HTTPS / Home Screen): "
-              "Link &rarr; Connect hotspot &rarr; close and drive.</p>"
-              "<p class=muted>WebSocket: <code>ws://");
-    html += softApIp();
-    html += F(":81</code></p></div>");
-    html += F("<p>Hotspot: <code>");
-    html += AP_SSID;
-    html += F("</code> / <code>");
-    html += AP_PASS;
-    html += F("</code></p>");
-    if (homeConnected()) {
-      html += F("<p class=ok>Also on place Wi-Fi: <code>");
-      html += WiFi.SSID();
-      html += F("</code> @ <code>");
-      html += homeIp();
-      html += F("</code></p>");
-    } else if (_staWanted) {
-      html += F("<p class=muted>Place Wi-Fi: connecting...</p>");
-    }
-    html += F("<div class=box><p><b>Add place Wi-Fi</b> (optional, later)</p>"
-              "<p class=muted>Save home / cafe / etc. SoftAP stays on. Max 10.</p>"
-              "<p><a href=/setup><button type=button>Open Wi-Fi setup</button></a></p></div>");
-    html += F("<p><a href=/status>status</a> · <a href=/networks>saved networks</a> · "
-              "<a href=/jpg>camera</a></p></body></html>");
-    _http.send(200, "text/html; charset=utf-8", html);
+    _http.send(200, "text/html; charset=utf-8", portalHtml());
+  });
+
+  _http.on("/drive", HTTP_GET, [this]() {
+    sendCors(_http);
+    _http.sendHeader("Cache-Control", "no-store");
+    _http.send_P(200, "text/html; charset=utf-8", WIFI_DRIVE_PAGE);
+  });
+
+  // Android / Google captive checks — 204 = "internet OK", dismiss login sheet
+  auto captiveOk = [this]() {
+    sendCors(_http);
+    _http.send(204);
+  };
+  _http.on("/generate_204", HTTP_GET, captiveOk);
+  _http.on("/gen_204", HTTP_GET, captiveOk);
+  _http.on("/connecttest.txt", HTTP_GET, [this]() {
+    sendCors(_http);
+    _http.send(200, "text/plain", "OK");
+  });
+  // iOS captive — Success body
+  _http.on("/hotspot-detect.html", HTTP_GET, [this]() {
+    sendCors(_http);
+    _http.send(200, "text/html",
+               F("<HTML><HEAD><TITLE>Success</TITLE></HEAD><BODY>Success</BODY></HTML>"));
+  });
+  _http.on("/library/test/success.html", HTTP_GET, [this]() {
+    sendCors(_http);
+    _http.send(200, "text/html",
+               F("<HTML><HEAD><TITLE>Success</TITLE></HEAD><BODY>Success</BODY></HTML>"));
+  });
+  _http.on("/ncsi.txt", HTTP_GET, [this]() {
+    sendCors(_http);
+    _http.send(200, "text/plain", "Microsoft NCSI");
+  });
+  _http.on("/fwlink/", HTTP_GET, [this]() {
+    sendCors(_http);
+    _http.sendHeader("Location", "http://192.168.4.1/", true);
+    _http.send(302, "text/plain", "");
   });
 
   _http.on("/setup", HTTP_GET, [this]() {
@@ -391,9 +453,24 @@ void WifiControl::setupHttp() {
   _http.on("/forget", HTTP_OPTIONS, opt);
   _http.on("/networks/connect", HTTP_OPTIONS, opt);
 
+  // Any unknown path (captive portal probes) → landing, not "Not Found"
+  _http.onNotFound([this]() {
+    sendCors(_http);
+    if (_http.method() == HTTP_OPTIONS) {
+      _http.send(204);
+      return;
+    }
+    const String uri = _http.uri();
+    if (uri.indexOf("generate_204") >= 0 || uri.indexOf("gen_204") >= 0) {
+      _http.send(204);
+      return;
+    }
+    _http.send(200, "text/html; charset=utf-8", portalHtml());
+  });
+
   _http.begin();
   _httpUp = true;
-  Serial.printf("[http] SoftAP http://%s/ (drive-first)\n", softApIp().c_str());
+  Serial.printf("[http] SoftAP http://%s/ (captive + drive-first)\n", softApIp().c_str());
 }
 
 void WifiControl::ensureCamRoutes() {
@@ -490,6 +567,9 @@ String WifiControl::statusJson() const {
   doc["saved"] = _staWanted;
   doc["savedCount"] = _netCount;
   doc["savedMax"] = WIFI_NET_MAX;
+  doc["tryingSsid"] = (_staWanted && !homeConnected()) ? _ssid : "";
+  doc["hotspot"] = AP_SSID;
+  doc["hotspotIp"] = softApIp();
   doc["staAttempt"] = _staAttempt;
   doc["staPaused"] = false;
   doc["wifiMode"] = "AP_STA";
@@ -683,10 +763,15 @@ void WifiControl::pauseStaForApClients(bool pause) {
 }
 
 void WifiControl::loop() {
+  if (_dnsRunning) _dns.processNextRequest();
+
   if (_httpUp) {
     ensureCamRoutes();
     _http.handleClient();
   }
+
+  // Keep SoftAP DNS alive if SoftAP restarted
+  if (_apUp && !_dnsRunning) ensureDns();
 
   static wl_status_t last = WL_IDLE_STATUS;
   const wl_status_t st = WiFi.status();

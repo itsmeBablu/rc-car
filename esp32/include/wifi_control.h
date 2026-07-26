@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Arduino.h>
+#include <DNSServer.h>
 #include <WebServer.h>
 #include <functional>
 #include "config.h"
@@ -18,7 +19,7 @@ struct SavedWifi {
 
 /**
  * SoftAP always (drive anywhere). Optional home STA — up to 10 saved networks.
- * HTTP :80 — status / setup / camera (camera last).
+ * HTTP :80 + SoftAP DNS captive portal.
  */
 class WifiControl {
 public:
@@ -46,6 +47,7 @@ public:
 
 private:
   WebServer _http{HTTP_PORT};
+  DNSServer _dns;
   BatteryMonitor *_batt = nullptr;
   CameraStream *_cam = nullptr;
   StatusFn _onStatus;
@@ -55,6 +57,7 @@ private:
   bool _camRoutes = false;
   bool _staWanted = false;
   bool _staPausedForApClients = false;
+  bool _dnsRunning = false;
 
   SavedWifi _nets[WIFI_NET_MAX];
   uint8_t _netCount = 0;
@@ -71,6 +74,7 @@ private:
 
   void setupHttp();
   void ensureCamRoutes();
+  void ensureDns();
   void emitStatus();
   void loadCreds();
   void persistNets();
@@ -83,4 +87,5 @@ private:
   void tryNextSta();
   void pauseStaForApClients(bool pause);
   int softApClients() const;
+  String portalHtml() const;
 };

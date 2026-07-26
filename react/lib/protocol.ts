@@ -23,6 +23,9 @@ export type CarStatus = {
   saved?: boolean;
   savedCount?: number;
   savedMax?: number;
+  tryingSsid?: string;
+  hotspot?: string;
+  hotspotIp?: string;
   networks?: SavedCarWifi[];
   home?: boolean;
   homeState?: string;
