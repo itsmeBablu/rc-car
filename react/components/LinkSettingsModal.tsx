@@ -888,12 +888,32 @@ export function LinkSettingsModal({
                   {linked ? (
                     <section className="link-card rounded-2xl border border-emerald-400/35 bg-emerald-400/10 p-3 sm:rounded-3xl sm:p-4">
                       <p className="text-[11px] text-emerald-100 sm:text-sm">
-                        You’re linked. Close and drive — SoftAP stays on.
+                        You’re linked
+                        {mode === "home"
+                          ? ` on home · ${host || homeIp || "—"}`
+                          : " on SoftAP"}
+                        . Close and drive with your UI.
                       </p>
                       <div className="mt-2 flex flex-col gap-1.5 sm:mt-3 sm:gap-2">
                         <PrimaryBtn tone="ok" onClick={onClose}>
                           Done — go drive
                         </PrimaryBtn>
+                        {mode === "hotspot" && (carStatus?.ip || homeIp) && !blocked && (
+                          <PrimaryBtn
+                            tone="muted"
+                            disabled={busy}
+                            onClick={() => {
+                              const ip = (carStatus?.ip || homeIp).trim();
+                              setHomeHost(ip);
+                              setMsg(
+                                `Switch phone Wi‑Fi to ${carStatus?.ssid || "home"}, then this connects your UI to ${ip}`,
+                              );
+                              void connectHomeFlow();
+                            }}
+                          >
+                            Switch link → home UI · {carStatus?.ip || homeIp}
+                          </PrimaryBtn>
+                        )}
                         <PrimaryBtn tone="muted" onClick={onDisconnect}>
                           Disconnect
                         </PrimaryBtn>
@@ -901,47 +921,101 @@ export function LinkSettingsModal({
                     </section>
                   ) : (
                     <>
+                      {/* Home React UI — always offer when car has LAN IP (even if SoftAP also up) */}
+                      {(carStatus?.home && carStatus.ip) ||
+                      (homeIp && homeIp !== AP_HOST && (homeReady || homeProbe?.ok)) ? (
+                        <section className="link-card rounded-2xl border border-emerald-400/35 bg-emerald-400/10 p-3 sm:rounded-3xl sm:p-4">
+                          <p className="text-[8px] uppercase tracking-[0.14em] text-emerald-300/80">
+                            Your React UI · home Wi‑Fi
+                          </p>
+                          <p className="mt-1 text-[11px] leading-snug text-emerald-50/90 sm:text-sm">
+                            Car is on{" "}
+                            <span className="font-mono">
+                              {carStatus?.ssid || "home Wi‑Fi"}
+                            </span>{" "}
+                            at{" "}
+                            <span className="font-mono">
+                              {carStatus?.ip || homeIp}
+                            </span>
+                            . SoftAP <code className="text-[10px]">/drive</code> is
+                            separate — for <b>your</b> cockpit:
+                          </p>
+                          <ol className="mt-2 list-decimal space-y-0.5 pl-4 text-[10px] text-emerald-100/75 sm:text-xs">
+                            <li>
+                              Phone Wi‑Fi →{" "}
+                              <span className="font-mono">
+                                {carStatus?.ssid || "WLAN-…"}
+                              </span>{" "}
+                              (leave SoftAP)
+                            </li>
+                            <li>
+                              Open React over <b>HTTP</b> (e.g.{" "}
+                              <span className="font-mono">http://PC-IP:3000</span>
+                              ) — not vercel.app HTTPS
+                            </li>
+                            <li>Tap the button below</li>
+                          </ol>
+                          <div className="mt-2.5 flex flex-col gap-1.5 sm:mt-3">
+                            {blocked ? (
+                              <PrimaryBtn
+                                tone="ok"
+                                onClick={() => {
+                                  const ip = carStatus?.ip || homeIp;
+                                  setHomeHost(ip);
+                                  setMsg(
+                                    `HTTPS blocks your UI. On phone home Wi‑Fi open http://YOUR-PC:3000 then Link → Connect · ${ip}`,
+                                  );
+                                  pushLog(
+                                    `Home IP ready ${ip} — use HTTP React app`,
+                                    "warn",
+                                  );
+                                }}
+                              >
+                                Home ready · {carStatus?.ip || homeIp} (need HTTP app)
+                              </PrimaryBtn>
+                            ) : (
+                              <PrimaryBtn
+                                tone="ok"
+                                disabled={busy}
+                                onClick={() => {
+                                  const ip = (carStatus?.ip || homeIp).trim();
+                                  setHomeHost(ip);
+                                  void connectHomeFlow();
+                                }}
+                              >
+                                {busy
+                                  ? "Connecting…"
+                                  : `Connect my UI · ${carStatus?.ip || homeIp}`}
+                              </PrimaryBtn>
+                            )}
+                            <p className="font-mono text-[9px] text-emerald-100/50">
+                              ws://{(carStatus?.ip || homeIp).replace(/:81$/, "")}:81
+                            </p>
+                          </div>
+                        </section>
+                      ) : null}
+
                       {!blocked && softReady && (
                         <section className="link-card rounded-2xl border border-[var(--paint)]/35 bg-[var(--paint)]/10 p-3 sm:rounded-3xl sm:p-4">
                           <p className="text-[8px] uppercase tracking-[0.14em] text-[var(--paint)]">
-                            1 · Drive on hotspot
+                            SoftAP only (simple page)
                           </p>
                           <p className="mt-1 text-[11px] text-white/70 sm:text-sm">
-                            Phone is on SoftAP. Tap connect — no home password needed.
+                            Links this app to SoftAP WS — or use{" "}
+                            <span className="font-mono text-[10px]">
+                              http://{AP_HOST}/drive
+                            </span>{" "}
+                            on the phone. Your full UI needs home Wi‑Fi above.
                           </p>
                           <div className="mt-2.5 sm:mt-3">
                             <PrimaryBtn disabled={busy} onClick={() => void connectHotspotFlow()}>
-                              {busy ? "Connecting…" : "Connect hotspot"}
+                              {busy ? "Connecting…" : "Connect hotspot (this app)"}
                             </PrimaryBtn>
                           </div>
                         </section>
                       )}
 
-                      {!blocked && !softReady && homeIp && (homeReady || carStatus?.home) && (
-                        <section className="link-card rounded-2xl border border-emerald-400/35 bg-emerald-400/10 p-3 sm:rounded-3xl sm:p-4">
-                          <p className="text-[8px] uppercase tracking-[0.14em] text-emerald-300/80">
-                            Drive on place Wi‑Fi
-                          </p>
-                          <p className="mt-1 text-[11px] text-emerald-50/90 sm:text-sm">
-                            Car is online at {homeIp}
-                            {carStatus?.ssid ? ` (${carStatus.ssid})` : ""}.
-                          </p>
-                          <div className="mt-2.5 sm:mt-3">
-                            <PrimaryBtn
-                              tone="ok"
-                              disabled={busy}
-                              onClick={() => {
-                                setHomeHost(homeIp);
-                                void connectHomeFlow();
-                              }}
-                            >
-                              {busy ? "Connecting…" : `Connect · ${homeIp}`}
-                            </PrimaryBtn>
-                          </div>
-                        </section>
-                      )}
-
-                      {!softReady && (
+                      {!softReady && !(carStatus?.home && carStatus.ip) && (
                         <section className="link-card rounded-xl border border-white/10 bg-black/20 p-2.5 sm:rounded-2xl sm:p-3">
                           <p className="text-[10px] text-white/60 sm:text-xs">
                             SoftAP not reachable. Join Wi‑Fi{" "}
@@ -1004,7 +1078,8 @@ export function LinkSettingsModal({
                           .slice()
                           .sort((a, b) => (b.lastUsed || 0) - (a.lastUsed || 0))
                           .map((n) => (
-                            <div key={n.ssid} className="flex gap-1.5">
+                            <div key={n.ssid} className="flex flex-col gap-1">
+                              <div className="flex gap-1.5">
                               <PrimaryBtn
                                 tone={n.active || carStatus?.ssid === n.ssid ? "ok" : "muted"}
                                 disabled={busy || !canTalkHttp}
@@ -1024,8 +1099,8 @@ export function LinkSettingsModal({
                                 }
                               >
                                 {n.active || carStatus?.ssid === n.ssid
-                                  ? `Saved · ${n.ssid} (active)`
-                                  : `Use saved · ${n.ssid}`}
+                                  ? `On car · ${n.ssid}`
+                                  : `Join on car · ${n.ssid}`}
                               </PrimaryBtn>
                               <button
                                 type="button"
@@ -1042,6 +1117,20 @@ export function LinkSettingsModal({
                               >
                                 Del
                               </button>
+                              </div>
+                              {(n.active || carStatus?.ssid === n.ssid) &&
+                                carStatus?.ip && (
+                                  <PrimaryBtn
+                                    tone="ok"
+                                    disabled={busy || blocked}
+                                    onClick={() => {
+                                      setHomeHost(carStatus.ip || "");
+                                      void connectHomeFlow();
+                                    }}
+                                  >
+                                    Connect my UI · {carStatus.ip}
+                                  </PrimaryBtn>
+                                )}
                             </div>
                           ))}
 

@@ -33,6 +33,7 @@ import {
   type CarStatus,
   type LinkMode,
 } from "@/lib/protocol";
+import { httpsBlocksLocalCar, probeCarHost, probeSoftAp } from "@/lib/linkNetwork";
 
 export function Cockpit() {
   const [debug, setDebug] = useState(false);
@@ -54,6 +55,39 @@ export function Cockpit() {
   const [charging, setCharging] = useState(false);
   const [chargeFull, setChargeFull] = useState(false);
   const animRef = useRef<number | null>(null);
+  const autoTried = useRef(false);
+
+  const connectHotspot = useEffectEvent(() => {
+    const url = DEFAULT_WS_URL;
+    setMode("hotspot");
+    saveLinkMode("hotspot");
+    setWsUrl(url);
+    saveStoredWsUrl(url);
+    setLinkEnabled(true);
+    upsertSavedNetwork({
+      mode: "hotspot",
+      host: AP_HOST,
+      label: AP_SSID,
+      ssid: AP_SSID,
+    });
+  });
+
+  const connectHome = useEffectEvent((h: string) => {
+    const url = hostToWsUrl(h);
+    setMode("home");
+    saveLinkMode("home");
+    setHost(h);
+    saveCarHost(h);
+    setWsUrl(url);
+    saveStoredWsUrl(url);
+    setLinkEnabled(true);
+    upsertSavedNetwork({
+      mode: "home",
+      host: h,
+      label: h,
+      ssid: undefined,
+    });
+  });
 
   useEffect(() => {
     const m = loadLinkMode();
@@ -64,7 +98,28 @@ export function Cockpit() {
     if (stored) {
       setWsUrl(stored);
       setLinkEnabled(true);
+      return;
     }
+
+    // HTTP-only auto link: SoftAP first, then saved home IP
+    if (httpsBlocksLocalCar() || autoTried.current) return;
+    autoTried.current = true;
+    void (async () => {
+      const soft = await probeSoftAp();
+      if (soft.ok) {
+        if (soft.status) setCarStatus(soft.status);
+        connectHotspot();
+        return;
+      }
+      const homeHost = (h || "").trim();
+      if (homeHost && homeHost !== AP_HOST) {
+        const home = await probeCarHost(homeHost, 4000);
+        if (home.ok) {
+          if (home.status) setCarStatus(home.status);
+          connectHome(home.status?.ip || homeHost);
+        }
+      }
+    })();
   }, []);
 
   const {
@@ -149,39 +204,6 @@ export function Cockpit() {
     if (typeof telemetry.charging === "boolean") setCharging(telemetry.charging);
     if (typeof telemetry.full === "boolean") setChargeFull(telemetry.full);
   }, [telemetry]);
-
-  const connectHotspot = () => {
-    const url = DEFAULT_WS_URL;
-    setMode("hotspot");
-    saveLinkMode("hotspot");
-    setWsUrl(url);
-    saveStoredWsUrl(url);
-    setLinkEnabled(true);
-    upsertSavedNetwork({
-      mode: "hotspot",
-      host: AP_HOST,
-      label: AP_SSID,
-      ssid: AP_SSID,
-    });
-    void refreshStatus();
-  };
-
-  const connectHome = (h: string) => {
-    const url = hostToWsUrl(h);
-    setMode("home");
-    saveLinkMode("home");
-    setHost(h);
-    saveCarHost(h);
-    setWsUrl(url);
-    saveStoredWsUrl(url);
-    setLinkEnabled(true);
-    upsertSavedNetwork({
-      mode: "home",
-      host: h,
-      label: carStatus?.ssid || h,
-      ssid: carStatus?.ssid,
-    });
-  };
 
   const disconnect = () => {
     setLinkEnabled(false);

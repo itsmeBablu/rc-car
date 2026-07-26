@@ -206,16 +206,25 @@ String WifiControl::portalHtml() const {
   html += F("</code><br>IP: <code>");
   html += softApIp();
   html += F("</code></p>"
-            "<p class=warn><b>iPhone Home Screen / Vercel app cannot drive SoftAP</b> "
-            "(HTTPS blocks motors). Use the Drive page below on this HTTP site.</p>"
-            "<p><a href=/drive><button type=button>DRIVE NOW</button></a></p>"
-            "</div>");
+            "<p class=warn>Use this HTTP cockpit (camera + drive). Home Screen / Vercel HTTPS "
+            "cannot control motors.</p>"
+            "<p><a href=/drive><button type=button>OPEN COCKPIT</button></a></p>"
+            "<p class=muted>Same page on home Wi-Fi: <code>http://");
   if (homeConnected()) {
-    html += F("<p class=ok>Car also on place Wi-Fi: <code>");
+    html += homeIp();
+  } else {
+    html += F("CAR_LAN_IP");
+  }
+  html += F("/drive</code></p></div>");
+  if (homeConnected()) {
+    html += F("<div class=box><p class=ok><b>Home Wi-Fi active</b></p><p><code>");
     html += WiFi.SSID();
     html += F("</code> @ <code>");
     html += homeIp();
-    html += F("</code></p>");
+    html += F("</code></p>"
+              "<p><a href=/drive><button type=button>Cockpit on this IP</button></a></p>"
+              "<p class=muted>Phone on home Wi-Fi can also use React at "
+              "<b>http://PC:3000</b> &rarr; Connect my UI.</p></div>");
   } else if (_staWanted && _ssid.length()) {
     html += F("<p class=muted>Car is trying place Wi-Fi: <code>");
     html += _ssid;
@@ -264,10 +273,22 @@ void WifiControl::setupHttp() {
     _http.send(200, "text/html; charset=utf-8", portalHtml());
   });
 
+  // Drive cockpit (live cam + controls) — SoftAP and home LAN
   _http.on("/drive", HTTP_GET, [this]() {
     sendCors(_http);
     _http.sendHeader("Cache-Control", "no-store");
     _http.send_P(200, "text/html; charset=utf-8", WIFI_DRIVE_PAGE);
+  });
+  // Alias for bookmarks / “app” wording
+  _http.on("/app", HTTP_GET, [this]() {
+    sendCors(_http);
+    _http.sendHeader("Location", "/drive", true);
+    _http.send(302, "text/plain", "");
+  });
+  _http.on("/cockpit", HTTP_GET, [this]() {
+    sendCors(_http);
+    _http.sendHeader("Location", "/drive", true);
+    _http.send(302, "text/plain", "");
   });
 
   // Android / Google captive checks — 204 = "internet OK", dismiss login sheet
