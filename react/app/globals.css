@@ -1224,8 +1224,19 @@ body {
 
 .brand-rc-logo {
   object-fit: contain;
-  max-width: 3.25rem;
+  max-width: 3.9rem; /* ~120% of prior 3.25rem */
   flex-shrink: 0;
+}
+
+.brand-liquid-wrap {
+  height: 2.35rem;
+  width: auto;
+  min-width: 8.5rem;
+}
+
+.brand-liquid-wrap--footer {
+  height: 2.82rem; /* ~120% */
+  min-width: 10.2rem;
 }
 
 .brand-glass {
@@ -1708,12 +1719,6 @@ body {
   flex-direction: row;
   align-items: center;
   justify-content: flex-start;
-}
-
-.brand-liquid-wrap {
-  height: 2.35rem;
-  width: auto;
-  min-width: 8.5rem;
 }
 
 .link-dock-liquid {

@@ -76,14 +76,25 @@ export function CameraView({
 
     const tick = async () => {
       const driving = drivingRef.current;
-      // Controls first: while driving, barely touch the camera; idle = snappier live
-      const gap = driving ? 900 : okRef.current ? 140 : 500;
+      // Camera last: pause while driving; idle = moderate refresh
+      if (driving) {
+        if (!cancelled) timer = setTimeout(tick, 700);
+        return;
+      }
+      const gap = okRef.current ? 280 : 600;
       try {
         const res = await fetch(`${jpgBase}?t=${Date.now()}`, {
           cache: "no-store",
-          signal: AbortSignal.timeout(driving ? 600 : 1200),
+          signal: AbortSignal.timeout(900),
         });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        if (!res.ok) {
+          if (res.status === 503) {
+            // ESP prioritizing control — try later
+            if (!cancelled) timer = setTimeout(tick, 400);
+            return;
+          }
+          throw new Error(`HTTP ${res.status}`);
+        }
         const blob = await res.blob();
         if (cancelled) return;
         const url = URL.createObjectURL(blob);

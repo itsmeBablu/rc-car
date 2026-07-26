@@ -27,19 +27,16 @@ void setup() {
   delay(600);
   Serial.println();
   Serial.println("=== RC-Car: SoftAP drive + optional home Wi‑Fi ===");
-  Serial.println("[prio] 1) stay linked  2) motors/servo  3) camera");
+  Serial.println("[prio] 1) WS link  2) servo  3) motors  4) camera last");
 
-  motors.begin();
+  // Actuators ready before network
   servo.begin();
+  motors.begin();
 
-  // SoftAP + HTTP status first — drive path before camera
   wifi.begin(&battery, &camera);
   websocket.begin(&servo, &motors);
 
-  battery.begin([](const String &json) {
-    // Push battery over WS when someone is linked
-    websocket.broadcast(json);
-  });
+  battery.begin([](const String &json) { websocket.broadcast(json); });
 
   gCamStartMs = millis();
 
@@ -50,16 +47,22 @@ void setup() {
 }
 
 void loop() {
-  // Control path first — ramp motors/servo every tick
-  websocket.loop();
-  motors.loop();
+  // 1) Connection / control input — drain several WS events per tick
+  for (int i = 0; i < 4; i++) websocket.loop();
+
+  // 2) Servo, then 3) DC motors
   servo.loop();
+  motors.loop();
+
+  // Network / HTTP (camera routes served here — must not starve WS)
   wifi.loop();
+  for (int i = 0; i < 2; i++) websocket.loop();
+
   battery.loop();
   ota.loop();
 
-  // Camera last — init after ~2s so SoftAP/WS settle
-  if (!gCamStarted && millis() - gCamStartMs > 2000) {
+  // 4) Camera last — start after SoftAP/WS settle
+  if (!gCamStarted && millis() - gCamStartMs > 2500) {
     gCamStarted = true;
     if (!camera.begin()) {
       Serial.println("[cam] unavailable — drive still works");
@@ -71,8 +74,7 @@ void loop() {
     ota.begin();
   }
 
-  // Soft heartbeat if no battery change
-  if (millis() - gLastBattBroadcastMs > 5000) {
+  if (millis() - gLastBattBroadcastMs > 8000) {
     gLastBattBroadcastMs = millis();
     websocket.broadcast(battery.statusJson());
   }

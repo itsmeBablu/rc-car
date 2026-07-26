@@ -23,6 +23,12 @@ void WebsocketControl::pump() {
   if (_running) _ws.loop();
 }
 
+bool WebsocketControl::preferControl() const {
+  if (_motorsLive) return true;
+  const uint32_t now = millis();
+  return (now - _lastSteerMs < 80) || (now - _lastDriveMs < 80);
+}
+
 void WebsocketControl::failsafeStop(const char *reason) {
   if (_motors) _motors->stop();
   _motorsLive = false;
@@ -33,7 +39,6 @@ void WebsocketControl::loop() {
   if (!_running) return;
   _ws.loop();
 
-  // Motors must be refreshed by drive cmds — otherwise cut power
   if (_motorsLive && (millis() - _lastDriveMs > DRIVE_FAILSAFE_MS)) {
     failsafeStop("drive timeout");
   }
@@ -59,7 +64,7 @@ void WebsocketControl::onEvent(uint8_t num, WStype_t type, uint8_t *payload,
 
   case WStype_DISCONNECTED:
     Serial.printf("[ws] client #%u gone — STOP\n", num);
-    if (_servo) _servo->setAngle(SERVO_CENTER);
+    if (_servo) _servo->setAngleImmediate(SERVO_CENTER);
     failsafeStop("disconnect");
     break;
 
@@ -79,49 +84,61 @@ void WebsocketControl::onEvent(uint8_t num, WStype_t type, uint8_t *payload,
 void WebsocketControl::handleMessage(uint8_t num, const char *msg) {
   JsonDocument doc;
   if (deserializeJson(doc, msg)) {
-    _ws.sendTXT(num, "{\"ok\":false,\"error\":\"bad_json\"}");
-    return;
+    return; // drop bad frames — don't block control
   }
 
   const char *cmd = doc["cmd"] | "";
-  bool ack = false;
+
+  // Priority: connection keepalive → servo → motors → (camera is HTTP, not here)
+  if (strcmp(cmd, "ping") == 0) {
+    _ws.sendTXT(num, "{\"ok\":true}");
+    return;
+  }
 
   if (strcmp(cmd, "steer") == 0 && doc["angle"].is<int>() && _servo) {
     _servo->setAngleImmediate(doc["angle"].as<int>());
-  } else if (doc["steer"].is<int>() && _servo) {
+    _lastSteerMs = millis();
+    return;
+  }
+  if (doc["steer"].is<int>() && _servo) {
     _servo->setAngleImmediate(doc["steer"].as<int>());
-  } else if (strcmp(cmd, "center") == 0 && _servo) {
+    _lastSteerMs = millis();
+    return;
+  }
+  if (strcmp(cmd, "center") == 0 && _servo) {
     _servo->setAngleImmediate(SERVO_CENTER);
-    ack = true;
-  } else if (strcmp(cmd, "drive") == 0 && _motors) {
+    _lastSteerMs = millis();
+    _ws.sendTXT(num, "{\"ok\":true}");
+    return;
+  }
+
+  if (strcmp(cmd, "drive") == 0 && _motors) {
     const int left = doc["left"] | 0;
     const int right = doc["right"] | 0;
     _motors->setBoth(left, right);
     _lastDriveMs = millis();
     _motorsLive = (left != 0 || right != 0);
-    // no ack — keep motors snappy
-  } else if (strcmp(cmd, "stop") == 0) {
-    if (_servo) _servo->setAngleImmediate(SERVO_CENTER);
-    failsafeStop("stop cmd");
-    _lastDriveMs = millis();
-    ack = true;
-  } else if (strcmp(cmd, "lights") == 0) {
-    bool on = doc["on"] | false;
-    Serial.printf("[ws] lights %s\n", on ? "ON" : "OFF");
-    ack = true;
-  } else if (strcmp(cmd, "ping") == 0) {
-    ack = true;
-  } else {
-    _ws.sendTXT(num, "{\"ok\":false,\"error\":\"unknown_cmd\"}");
     return;
   }
 
-  if (ack) {
+  if (strcmp(cmd, "stop") == 0) {
+    if (_servo) _servo->setAngleImmediate(SERVO_CENTER);
+    failsafeStop("stop cmd");
+    _lastDriveMs = millis();
     _ws.sendTXT(num, "{\"ok\":true}");
+    return;
+  }
+
+  if (strcmp(cmd, "lights") == 0) {
+    _ws.sendTXT(num, "{\"ok\":true}");
+    return;
   }
 }
 
-/** Used by HTTP /jpg to keep WS alive while sending a frame. */
 void wsPumpFromHttp() {
   if (gWsPump) gWsPump->pump();
+}
+
+bool wsPreferControl() {
+  return gWsPump && gWsPump->preferControl();
 }

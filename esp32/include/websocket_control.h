@@ -13,11 +13,11 @@ public:
   void begin(ServoControl *servo, MotorControl *motors);
   void loop();
   bool isRunning() const { return _running; }
-  /** Broadcast JSON to all clients (battery / status) — low rate. */
   void broadcast(const String &json);
   uint8_t clientCount() const;
-  /** Call from long HTTP handlers so control stays alive during /jpg. */
   void pump();
+  /** True when phone is actively driving — HTTP /jpg should yield. */
+  bool preferControl() const;
 
 private:
   WebSocketsServer _ws{WS_PORT};
@@ -25,6 +25,7 @@ private:
   MotorControl *_motors = nullptr;
   bool _running = false;
   uint32_t _lastDriveMs = 0;
+  uint32_t _lastSteerMs = 0;
   bool _motorsLive = false;
 
   void onEvent(uint8_t num, WStype_t type, uint8_t *payload, size_t length);
@@ -32,5 +33,5 @@ private:
   void failsafeStop(const char *reason);
 };
 
-/** Keep WS responsive during long /jpg writes. */
 void wsPumpFromHttp();
+bool wsPreferControl();

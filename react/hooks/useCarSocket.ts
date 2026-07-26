@@ -18,6 +18,13 @@ type Options = {
   enabled?: boolean;
 };
 
+/**
+ * Priority send path (never stuck on one message type):
+ * 1) connection
+ * 2) latest steer
+ * 3) latest drive
+ * 4) ping last
+ */
 export function useCarSocket(options: Options = {}) {
   const url = options.url ?? DEFAULT_WS_URL;
   const enabled = options.enabled ?? true;
@@ -34,6 +41,9 @@ export function useCarSocket(options: Options = {}) {
   const retryRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pingRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const angleRef = useRef(90);
+  const pendingSteer = useRef<number | null>(null);
+  const pendingDrive = useRef<{ l: number; r: number } | null>(null);
+  const flushRaf = useRef<number | null>(null);
 
   const clearRetry = () => {
     if (retryRef.current) {
@@ -49,6 +59,30 @@ export function useCarSocket(options: Options = {}) {
     }
   };
 
+  const flush = useEffectEvent(() => {
+    flushRaf.current = null;
+    const ws = wsRef.current;
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+
+    // Servo first, then motors — only latest of each
+    const steer = pendingSteer.current;
+    if (steer != null) {
+      pendingSteer.current = null;
+      angleRef.current = steer;
+      ws.send(steerMessage(steer));
+    }
+    const drive = pendingDrive.current;
+    if (drive) {
+      pendingDrive.current = null;
+      ws.send(driveMessage(drive.l, drive.r));
+    }
+  });
+
+  const scheduleFlush = () => {
+    if (flushRaf.current != null) return;
+    flushRaf.current = requestAnimationFrame(() => flush());
+  };
+
   const sendRaw = useEffectEvent((payload: string) => {
     const ws = wsRef.current;
     if (ws && ws.readyState === WebSocket.OPEN) {
@@ -59,21 +93,29 @@ export function useCarSocket(options: Options = {}) {
   });
 
   const sendSteer = useEffectEvent((angle: number) => {
-    angleRef.current = angle;
-    return sendRaw(steerMessage(angle));
+    pendingSteer.current = angle;
+    scheduleFlush();
+    return true;
   });
 
   const sendCenter = useEffectEvent(() => {
+    pendingSteer.current = 90;
     angleRef.current = 90;
+    scheduleFlush();
     return sendRaw(centerMessage());
   });
 
   const sendDrive = useEffectEvent((left: number, right: number) => {
-    return sendRaw(driveMessage(left, right));
+    pendingDrive.current = { l: left, r: right };
+    scheduleFlush();
+    return true;
   });
 
   const sendStop = useEffectEvent(() => {
+    pendingDrive.current = { l: 0, r: 0 };
+    pendingSteer.current = 90;
     angleRef.current = 90;
+    scheduleFlush();
     return sendRaw(stopMessage());
   });
 
@@ -84,6 +126,10 @@ export function useCarSocket(options: Options = {}) {
   const connect = useEffectEvent(() => {
     clearRetry();
     clearPing();
+    if (flushRaf.current != null) {
+      cancelAnimationFrame(flushRaf.current);
+      flushRaf.current = null;
+    }
     if (wsRef.current) {
       wsRef.current.onclose = null;
       wsRef.current.close();
@@ -104,11 +150,13 @@ export function useCarSocket(options: Options = {}) {
 
     ws.onopen = () => {
       setState("open");
-      sendSteer(angleRef.current);
+      pendingSteer.current = angleRef.current;
+      scheduleFlush();
       clearPing();
+      // Ping last / rare — link keepalive only
       pingRef.current = setInterval(() => {
         sendRaw(pingMessage());
-      }, 4000);
+      }, 5000);
     };
 
     ws.onmessage = (ev) => {
@@ -159,6 +207,7 @@ export function useCarSocket(options: Options = {}) {
     return () => {
       clearRetry();
       clearPing();
+      if (flushRaf.current != null) cancelAnimationFrame(flushRaf.current);
       if (wsRef.current) {
         wsRef.current.onclose = null;
         wsRef.current.close();

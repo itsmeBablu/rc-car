@@ -502,6 +502,11 @@ void WifiControl::ensureCamRoutes() {
     if (!gWifi) return;
     WebServer &s = gWifi->http();
     sendCors(s);
+    // Controls first — skip frame while servo/motors are active
+    if (wsPreferControl()) {
+      s.send(503, "text/plain", "control_busy");
+      return;
+    }
     camera_fb_t *fb = esp_camera_fb_get();
     if (!fb) {
       s.send(503, "text/plain", "capture_fail");
@@ -511,10 +516,13 @@ void WifiControl::ensureCamRoutes() {
     s.setContentLength(fb->len);
     s.send(200, "image/jpeg", "");
     WiFiClient client = s.client();
-    // Chunked write + WS pump so motors/servo stay responsive during /jpg
-    const size_t chunk = 1024;
+    const size_t chunk = 512;
     size_t sent = 0;
     while (sent < fb->len && client.connected()) {
+      if (wsPreferControl()) {
+        // Abort mid-frame so drive input wins
+        break;
+      }
       const size_t n = fb->len - sent;
       const size_t take = n > chunk ? chunk : n;
       const size_t w = client.write(fb->buf + sent, take);
@@ -543,7 +551,13 @@ void WifiControl::ensureCamRoutes() {
     client.println();
     uint32_t lastMs = 0;
     uint8_t frames = 0;
-    while (client.connected() && frames < 120) {
+    while (client.connected() && frames < 60) {
+      wsPumpFromHttp();
+      if (wsPreferControl()) {
+        delay(20);
+        yield();
+        continue; // skip frames while driving
+      }
       camera_fb_t *fb = esp_camera_fb_get();
       if (!fb) {
         delay(30);
@@ -553,15 +567,29 @@ void WifiControl::ensureCamRoutes() {
       client.printf(
           "--frame\r\nContent-Type: image/jpeg\r\nContent-Length: %u\r\n\r\n",
           fb->len);
-      if (client.write(fb->buf, fb->len) == 0) {
-        esp_camera_fb_return(fb);
-        break;
+      size_t sent = 0;
+      bool ok = true;
+      while (sent < fb->len && client.connected()) {
+        wsPumpFromHttp();
+        if (wsPreferControl()) {
+          ok = false;
+          break;
+        }
+        const size_t take = (fb->len - sent) > 512 ? 512 : (fb->len - sent);
+        const size_t w = client.write(fb->buf + sent, take);
+        if (w == 0) {
+          ok = false;
+          break;
+        }
+        sent += w;
+        yield();
       }
-      client.print("\r\n");
       esp_camera_fb_return(fb);
+      if (!ok) break;
+      client.print("\r\n");
       frames++;
       uint32_t now = millis();
-      if (now - lastMs < 200) delay(200 - (now - lastMs));
+      if (now - lastMs < 250) delay(250 - (now - lastMs));
       lastMs = millis();
       yield();
     }
