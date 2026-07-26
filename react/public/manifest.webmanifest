@@ -1,8 +1,9 @@
 {
   "name": "GT2 RS · RC Cockpit",
   "short_name": "GT2 RS",
-  "description": "1:24 RC car cockpit — Bluetooth + WiFi",
+  "description": "1:24 RC car cockpit — HTTP LAN control (not HTTPS)",
   "start_url": "/",
+  "scope": "/",
   "display": "standalone",
   "orientation": "landscape",
   "background_color": "#070809",

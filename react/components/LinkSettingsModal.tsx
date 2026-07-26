@@ -449,7 +449,9 @@ export function LinkSettingsModal({
               Open http://{AP_HOST}/
             </PrimaryBtn>
             <p className="text-[9px] text-white/40 sm:text-[10px]">
-              For in-app Save: use http://localhost:3000 (not vercel.app).
+              For in-app Save &amp; drive: open this app over{" "}
+              <b className="text-white/70">http://PC_IP:3000</b> on your phone
+              (same Wi‑Fi) — not vercel.app HTTPS.
             </p>
           </div>
         </>

@@ -4,6 +4,7 @@ import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { AnalogCluster } from "@/components/AnalogCluster";
 import { CameraView } from "@/components/CameraView";
 import { Glass } from "@/components/Glass";
+import { HttpAccessBanner } from "@/components/HttpAccessBanner";
 import {
   LinkSettingsModal,
 } from "@/components/LinkSettingsModal";
@@ -300,6 +301,7 @@ export function Cockpit() {
 
   return (
     <div className="cockpit cockpit-graph relative flex h-dvh max-h-dvh flex-col overflow-hidden text-white">
+      <HttpAccessBanner />
       <header className="pointer-events-none absolute inset-x-0 top-0 z-20 flex items-start justify-start px-3 pt-1.5 sm:px-4">
         <div className="brand-liquid-wrap pointer-events-none">
           <Glass borderRadius={10} zIndex={2} className="h-full w-full">
