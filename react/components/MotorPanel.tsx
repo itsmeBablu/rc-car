@@ -136,6 +136,7 @@ export function MotorPanel({
           type="button"
           disabled={!enabled}
           className={`pedal pedal-brake glass-pedal pedal-lg pedal-liquid disabled:opacity-40 ${braking ? "is-pressed" : ""}`}
+          style={{ touchAction: "none" }}
           onPointerDown={(e) => {
             e.preventDefault();
             e.currentTarget.setPointerCapture(e.pointerId);
@@ -164,9 +165,11 @@ export function MotorPanel({
           type="button"
           disabled={!enabled}
           className={`pedal pedal-accel glass-pedal pedal-lg pedal-liquid disabled:opacity-40 ${pedalDown || output > 0.02 ? "is-pressed" : ""}`}
+          style={{ touchAction: "none" }}
           onPointerDown={(e) => {
             e.preventDefault();
             e.currentTarget.setPointerCapture(e.pointerId);
+            onBrake(false);
             onPedal(true);
           }}
           onPointerUp={(e) => {

@@ -9,6 +9,8 @@ import type { LinkMode } from "@/lib/protocol";
 type Props = {
   streamUrl: string | null;
   cameraEnabled: boolean;
+  /** True while throttle/brake/motors active — slow cam so controls stay first. */
+  drivingActive?: boolean;
   debug?: boolean;
   left?: number;
   right?: number;
@@ -36,6 +38,7 @@ function toJpgUrl(streamOrBase: string): string {
 export function CameraView({
   streamUrl,
   cameraEnabled,
+  drivingActive = false,
   debug,
   left = 0,
   right = 0,
@@ -52,6 +55,8 @@ export function CameraView({
   const [ok, setOk] = useState(false);
   const blobRef = useRef<string | null>(null);
   const okRef = useRef(false);
+  const drivingRef = useRef(drivingActive);
+  drivingRef.current = drivingActive;
 
   const jpgBase = streamUrl ? toJpgUrl(streamUrl) : null;
   const canPoll = Boolean(cameraEnabled && jpgBase);
@@ -70,9 +75,13 @@ export function CameraView({
     let timer: ReturnType<typeof setTimeout> | null = null;
 
     const tick = async () => {
+      const driving = drivingRef.current;
+      // Controls first: while driving, barely touch the camera; idle = snappier live
+      const gap = driving ? 900 : okRef.current ? 140 : 500;
       try {
         const res = await fetch(`${jpgBase}?t=${Date.now()}`, {
           cache: "no-store",
+          signal: AbortSignal.timeout(driving ? 600 : 1200),
         });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const blob = await res.blob();
@@ -85,13 +94,16 @@ export function CameraView({
         setOk(true);
         okRef.current = true;
       } catch (e) {
-        if (!cancelled) {
+        if (
+          !cancelled &&
+          !(e instanceof DOMException && e.name === "AbortError") &&
+          !(e instanceof Error && e.name === "TimeoutError")
+        ) {
           setErr(e instanceof Error ? e.message : "fetch failed");
           if (!okRef.current) setOk(false);
         }
       }
-      // Camera last — slower poll keeps SoftAP / motors snappy
-      if (!cancelled) timer = setTimeout(tick, okRef.current ? 280 : 700);
+      if (!cancelled) timer = setTimeout(tick, gap);
     };
 
     void tick();

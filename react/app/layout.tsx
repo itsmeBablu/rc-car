@@ -25,9 +25,12 @@ export const metadata: Metadata = {
   applicationName: "GT2 RS",
   manifest: "/manifest.webmanifest",
   icons: {
-    icon: [{ url: "/rc.svg", type: "image/svg+xml" }],
-    shortcut: ["/rc.svg"],
-    apple: [{ url: "/rc.svg" }],
+    icon: [
+      { url: "/icon-512.png", sizes: "512x512", type: "image/png" },
+      { url: "/apple-touch-icon.png", sizes: "180x180", type: "image/png" },
+    ],
+    shortcut: ["/apple-touch-icon.png"],
+    apple: [{ url: "/apple-touch-icon.png", sizes: "180x180", type: "image/png" }],
   },
   appleWebApp: {
     capable: true,

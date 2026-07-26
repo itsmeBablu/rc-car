@@ -109,6 +109,10 @@ export function useDrivePhysics({ mode, gear, enabled, onMotor }: Options) {
     setPedalState(eng.pedal);
     setPhase(eng.phase);
     setBrakingState(eng.braking);
+    // Gas release → send 0 immediately (don't wait for RAF)
+    if (value <= 0) {
+      publish(0, true);
+    }
     ensureLoop();
   };
 
@@ -119,8 +123,12 @@ export function useDrivePhysics({ mode, gear, enabled, onMotor }: Options) {
     setPedalState(eng.pedal);
     setBrakingState(eng.braking);
     setPhase(eng.phase);
-    // Push first brake sample immediately so motors cut now
-    publish(eng.tick(performance.now()), true);
+    // Brake always cuts motors on the next WS frame
+    if (on) {
+      publish(0, true);
+    } else {
+      publish(eng.tick(performance.now()), true);
+    }
     ensureLoop();
   };
 

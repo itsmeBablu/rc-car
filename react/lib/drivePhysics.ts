@@ -3,10 +3,10 @@
 export type DriveModeId = "NORMAL" | "SPORT";
 
 export const DRIVE = {
-  /** Pedal release: momentum coast-down. */
-  COAST_DURATION_S: 1.8,
-  /** Dedicated brake: firm pull to zero (much faster than coast). */
-  BRAKE_DURATION_S: 0.25,
+  /** Gas release: cut motors immediately (RC feel — no long roll). */
+  COAST_DURATION_S: 0.05,
+  /** Brake: hard stop. */
+  BRAKE_DURATION_S: 0.04,
 } as const;
 
 /** Accel keyframes: [seconds, output 0..1] while pedal held at 100%. */
@@ -124,6 +124,14 @@ export class DrivePhysicsEngine {
     this.pedal = next;
     // Don't fight an active brake with a new throttle press until brake lifts
     if (this.braking && next > 0) return;
+    // Gas up → motors off now (no long coast)
+    if (next <= 0 && !this.braking) {
+      this.output = 0;
+      this.phase = "hold";
+      this.from = 0;
+      this.to = 0;
+      return;
+    }
     this.syncPhase(performance.now());
   }
 
@@ -131,15 +139,12 @@ export class DrivePhysicsEngine {
     if (on === this.braking) return;
     this.braking = on;
     if (on) {
-      // Brake overrides throttle — cut pedal intent so we don't re-accel mid-brake
+      // Brake = immediate cut (controls first)
       this.pedal = 0;
-      this.startBlend(
-        performance.now(),
-        0,
-        DRIVE.BRAKE_DURATION_S,
-        easeOutQuad,
-        "brake",
-      );
+      this.output = 0;
+      this.phase = "hold";
+      this.from = 0;
+      this.to = 0;
       return;
     }
     this.syncPhase(performance.now());

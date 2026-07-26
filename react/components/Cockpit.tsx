@@ -154,6 +154,7 @@ export function Cockpit() {
     onMotor: (l, r) => {
       setLeft(l);
       setRight(r);
+      // drive 0,0 — do not use stop cmd (that also centers the wheel)
       sendDriveWs(l, r);
     },
   });
@@ -349,6 +350,9 @@ export function Cockpit() {
           <CameraView
             streamUrl={streamUrl}
             cameraEnabled={linked}
+            drivingActive={
+              pedalInput > 0 || braking || Math.abs(left) > 0 || Math.abs(right) > 0
+            }
             debug={debug}
             left={left}
             right={right}
