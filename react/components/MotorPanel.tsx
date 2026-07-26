@@ -88,8 +88,13 @@ export function MotorPanel({
       onBrakeRef.current(false);
     };
     window.addEventListener("blur", release);
+    const onVis = () => {
+      if (document.visibilityState === "hidden") release();
+    };
+    document.addEventListener("visibilitychange", onVis);
     return () => {
       window.removeEventListener("blur", release);
+      document.removeEventListener("visibilitychange", onVis);
       release();
     };
   }, []);

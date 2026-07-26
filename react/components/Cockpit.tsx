@@ -140,6 +140,11 @@ export function Cockpit() {
   const linked = wsState === "open";
   const canDrive = linked;
 
+  const leftRef = useRef(0);
+  const rightRef = useRef(0);
+  leftRef.current = left;
+  rightRef.current = right;
+
   const {
     pedal: pedalInput,
     braking,
@@ -152,12 +157,23 @@ export function Cockpit() {
     gear,
     enabled: canDrive,
     onMotor: (l, r) => {
+      leftRef.current = l;
+      rightRef.current = r;
       setLeft(l);
       setRight(r);
       // drive 0,0 — do not use stop cmd (that also centers the wheel)
       sendDriveWs(l, r);
     },
   });
+
+  // Keepalive: refresh drive cmds so ESP failsafe never leaves motors stuck on
+  useEffect(() => {
+    if (!linked) return;
+    const id = setInterval(() => {
+      sendDriveWs(leftRef.current, rightRef.current);
+    }, 80);
+    return () => clearInterval(id);
+  }, [linked, sendDriveWs]);
 
   const statusHost =
     mode === "hotspot" ? AP_HOST : host || wsUrl.replace(/^ws:\/\//, "").replace(/:81$/, "");

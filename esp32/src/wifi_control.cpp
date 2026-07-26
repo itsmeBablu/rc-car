@@ -3,6 +3,7 @@
 #include "battery_monitor.h"
 #include "camera_stream.h"
 #include "config.h"
+#include "websocket_control.h"
 
 #include <ArduinoJson.h>
 #include <DNSServer.h>
@@ -510,7 +511,18 @@ void WifiControl::ensureCamRoutes() {
     s.setContentLength(fb->len);
     s.send(200, "image/jpeg", "");
     WiFiClient client = s.client();
-    client.write(fb->buf, fb->len);
+    // Chunked write + WS pump so motors/servo stay responsive during /jpg
+    const size_t chunk = 1024;
+    size_t sent = 0;
+    while (sent < fb->len && client.connected()) {
+      const size_t n = fb->len - sent;
+      const size_t take = n > chunk ? chunk : n;
+      const size_t w = client.write(fb->buf + sent, take);
+      if (w == 0) break;
+      sent += w;
+      yield();
+      wsPumpFromHttp();
+    }
     esp_camera_fb_return(fb);
   });
 

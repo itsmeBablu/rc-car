@@ -109,8 +109,9 @@ export function useDrivePhysics({ mode, gear, enabled, onMotor }: Options) {
     setPedalState(eng.pedal);
     setPhase(eng.phase);
     setBrakingState(eng.braking);
-    // Gas release → send 0 immediately (don't wait for RAF)
+    // Gas release → cut + triple-send 0 so a lost packet can't leave motors on
     if (value <= 0) {
+      publish(0, true);
       publish(0, true);
     }
     ensureLoop();
@@ -123,8 +124,8 @@ export function useDrivePhysics({ mode, gear, enabled, onMotor }: Options) {
     setPedalState(eng.pedal);
     setBrakingState(eng.braking);
     setPhase(eng.phase);
-    // Brake always cuts motors on the next WS frame
     if (on) {
+      publish(0, true);
       publish(0, true);
     } else {
       publish(eng.tick(performance.now()), true);

@@ -2,10 +2,13 @@
 #include <ArduinoJson.h>
 #include <WiFi.h>
 
+static WebsocketControl *gWsPump = nullptr;
+
 void WebsocketControl::begin(ServoControl *servo, MotorControl *motors) {
   if (_running) return;
   _servo = servo;
   _motors = motors;
+  gWsPump = this;
 
   _ws.onEvent([this](uint8_t num, WStype_t type, uint8_t *payload, size_t length) {
     this->onEvent(num, type, payload, length);
@@ -16,8 +19,24 @@ void WebsocketControl::begin(ServoControl *servo, MotorControl *motors) {
                 WiFi.softAPIP().toString().c_str(), WS_PORT);
 }
 
-void WebsocketControl::loop() {
+void WebsocketControl::pump() {
   if (_running) _ws.loop();
+}
+
+void WebsocketControl::failsafeStop(const char *reason) {
+  if (_motors) _motors->stop();
+  _motorsLive = false;
+  Serial.printf("[ws] failsafe STOP (%s)\n", reason ? reason : "?");
+}
+
+void WebsocketControl::loop() {
+  if (!_running) return;
+  _ws.loop();
+
+  // Motors must be refreshed by drive cmds — otherwise cut power
+  if (_motorsLive && (millis() - _lastDriveMs > DRIVE_FAILSAFE_MS)) {
+    failsafeStop("drive timeout");
+  }
 }
 
 void WebsocketControl::broadcast(const String &json) {
@@ -27,8 +46,7 @@ void WebsocketControl::broadcast(const String &json) {
 }
 
 uint8_t WebsocketControl::clientCount() const {
-  // WebSocketsServer has connectedClients() in newer libs; fall back via loop usage
-  return _running ? 1 : 0; // informational only
+  return _running ? 1 : 0;
 }
 
 void WebsocketControl::onEvent(uint8_t num, WStype_t type, uint8_t *payload,
@@ -42,7 +60,7 @@ void WebsocketControl::onEvent(uint8_t num, WStype_t type, uint8_t *payload,
   case WStype_DISCONNECTED:
     Serial.printf("[ws] client #%u gone — STOP\n", num);
     if (_servo) _servo->setAngle(SERVO_CENTER);
-    if (_motors) _motors->stop();
+    failsafeStop("disconnect");
     break;
 
   case WStype_TEXT: {
@@ -76,11 +94,16 @@ void WebsocketControl::handleMessage(uint8_t num, const char *msg) {
     _servo->setAngleImmediate(SERVO_CENTER);
     ack = true;
   } else if (strcmp(cmd, "drive") == 0 && _motors) {
-    _motors->setBoth(doc["left"] | 0, doc["right"] | 0);
+    const int left = doc["left"] | 0;
+    const int right = doc["right"] | 0;
+    _motors->setBoth(left, right);
+    _lastDriveMs = millis();
+    _motorsLive = (left != 0 || right != 0);
     // no ack — keep motors snappy
   } else if (strcmp(cmd, "stop") == 0) {
-    if (_motors) _motors->stop();
     if (_servo) _servo->setAngleImmediate(SERVO_CENTER);
+    failsafeStop("stop cmd");
+    _lastDriveMs = millis();
     ack = true;
   } else if (strcmp(cmd, "lights") == 0) {
     bool on = doc["on"] | false;
@@ -96,4 +119,9 @@ void WebsocketControl::handleMessage(uint8_t num, const char *msg) {
   if (ack) {
     _ws.sendTXT(num, "{\"ok\":true}");
   }
+}
+
+/** Used by HTTP /jpg to keep WS alive while sending a frame. */
+void wsPumpFromHttp() {
+  if (gWsPump) gWsPump->pump();
 }
