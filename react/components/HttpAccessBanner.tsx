@@ -29,12 +29,12 @@ export function HttpAccessBanner() {
 
   if (https) {
     return (
-      <div className="relative z-50 border-b border-amber-500/40 bg-amber-950/95 px-3 py-2 text-center text-[11px] text-amber-100">
-        This page is HTTPS — the car cannot be controlled here. On your PC run{" "}
-        <span className="font-mono text-[var(--paint)]">npm run dev</span>, then on
-        the phone open{" "}
-        <span className="font-mono text-[var(--paint)]">http://PC_IP:3000</span>{" "}
-        (same Wi‑Fi).
+      <div className="relative z-50 border-b border-amber-500/40 bg-amber-950/95 px-3 py-2 text-center text-[11px] leading-snug text-amber-100">
+        You’re on the online (HTTPS) site — it can’t drive the car.
+        <br />
+        Use your React app from the PC instead: on the phone open{" "}
+        <span className="font-mono text-[var(--paint)]">http://PC-IP:3000</span>{" "}
+        (PC on, same Wi‑Fi). Or use the car’s own control page on home Wi‑Fi.
         <button
           type="button"
           className="ml-2 underline opacity-70"
@@ -53,7 +53,7 @@ export function HttpAccessBanner() {
 
   return (
     <div className="relative z-50 border-b border-[var(--paint)]/30 bg-black/80 px-3 py-2 text-center text-[11px] text-white/80">
-      Phone control (HTTP): open{" "}
+      On your phone open this same app at{" "}
       <a
         className="font-mono text-[var(--paint)] underline"
         href={phoneUrl}
@@ -62,7 +62,7 @@ export function HttpAccessBanner() {
       >
         {phoneUrl}
       </a>{" "}
-      on the same Wi‑Fi — do not use HTTPS / Vercel.
+      (same Wi‑Fi). That is your React UI.
       <button
         type="button"
         className="ml-2 underline opacity-70"
